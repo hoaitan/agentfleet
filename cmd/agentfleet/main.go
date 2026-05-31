@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"regexp"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -14,6 +15,14 @@ import (
 	"github.com/tan/agentfleet/internal/fleet"
 	"github.com/tan/agentfleet/internal/source"
 )
+
+// validTaskID reports whether id is safe for use in file paths and shell strings.
+// Accepts only lowercase alphanumeric and hyphens (the same set slugify produces).
+var taskIDRe = regexp.MustCompile(`^[a-z0-9\-]+$`)
+
+func validTaskID(id string) bool {
+	return taskIDRe.MatchString(id)
+}
 
 func main() {
 	src := flag.String("source", "", "task source: http URL, .md file, .json/.yaml file")
@@ -44,6 +53,9 @@ func main() {
 	for i, task := range tasks {
 		if strings.TrimSpace(task.Command()) == "" {
 			log.Fatalf("task %q has empty command", task.ID())
+		}
+		if !validTaskID(task.ID()) {
+			log.Fatalf("task %q has invalid ID %q (must match [a-z0-9-]+)", task.Name(), task.ID())
 		}
 		ag := agent.NewPtyAgent(fleet.CommandFields(task))
 		runners[i] = fleet.NewRunner(task, ag)

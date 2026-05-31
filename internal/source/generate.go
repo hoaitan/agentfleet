@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/tan/agentfleet/internal/fleet"
 )
+
+var generateClient = &http.Client{Timeout: 60 * time.Second}
 
 const defaultAPIURL = "https://api.anthropic.com/v1/messages"
 
@@ -65,25 +68,33 @@ func (s *GenerateSource) Load() ([]fleet.Task, error) {
 	req.Header.Set("x-api-key", s.apiKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := generateClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("call API: %w", err)
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		var apiErr struct {
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		json.NewDecoder(resp.Body).Decode(&apiErr) //nolint:errcheck
+		msg := apiErr.Error.Message
+		if msg == "" {
+			msg = http.StatusText(resp.StatusCode)
+		}
+		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, msg)
+	}
+
 	var result struct {
 		Content []struct {
 			Text string `json:"text"`
 		} `json:"content"`
-		Error struct {
-			Message string `json:"message"`
-		} `json:"error"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decode response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API error: %s", result.Error.Message)
 	}
 	if len(result.Content) == 0 {
 		return nil, fmt.Errorf("empty response from model")

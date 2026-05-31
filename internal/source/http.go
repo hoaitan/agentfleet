@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/tan/agentfleet/internal/fleet"
 )
+
+var httpClient = &http.Client{Timeout: 30 * time.Second}
 
 // HTTPSource loads tasks from a JSON HTTP endpoint.
 // The endpoint must return a JSON array matching fleet.BasicTask.
@@ -15,7 +18,7 @@ type HTTPSource struct {
 }
 
 func (s *HTTPSource) Load() ([]fleet.Task, error) {
-	resp, err := http.Get(s.URL) //nolint:noctx
+	resp, err := httpClient.Get(s.URL)
 	if err != nil {
 		return nil, fmt.Errorf("fetch %s: %w", s.URL, err)
 	}
