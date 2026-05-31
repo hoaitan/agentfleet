@@ -2,27 +2,57 @@
 
 *Run your AI agent fleet from a single terminal dashboard*
 
-agentfleet is a Go tool for running multiple interactive CLI sessions (Claude Code, Codex, or any command) in parallel with a unified Bubbletea TUI dashboard. Each agent runs independently in a PTY with automatic step injection (timed prompts), session recording, and remote attach capabilities via Unix sockets.
+agentfleet is a Go **library** for running multiple interactive CLI sessions (Claude Code, Codex, or any command) in parallel with a unified Bubbletea TUI dashboard. Each agent runs independently in a PTY with optional step injection, session recording, and remote attach capabilities via Unix sockets.
 
 ## Install
 
-Download pre-built binaries or build from source:
+Use as a library:
 
-```bash
-go install github.com/hoaitan/agentfleet/cmd/agentfleet@latest
-go install github.com/hoaitan/agentfleet/cmd/attach@latest
+```go
+import agentfleet "github.com/hoaitan/agentfleet"
 ```
 
-Or build from source:
+Or build the example binaries from source:
 
 ```bash
 git clone https://github.com/hoaitan/agentfleet
 cd agentfleet
-go build -o agentfleet ./cmd/agentfleet/
-go build -o attach ./cmd/attach/
+go build -o agentfleet ./examples/file-manager/
+go build -o attach ./examples/attach/
 ```
 
-## Quick Start
+## Library Quick Start
+
+```go
+package main
+
+import (
+    "context"
+    "os/signal"
+    "syscall"
+
+    agentfleet "github.com/hoaitan/agentfleet"
+    "github.com/hoaitan/agentfleet/tui"
+)
+
+func main() {
+    cfg := agentfleet.DefaultConfig()
+    cfg.Agent = agentfleet.AgentConfigFromTerminal()
+
+    ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+    defer stop()
+
+    fleet := agentfleet.NewFleet(cfg.Fleet)
+
+    // Implement Manager to drive tasks into the Fleet:
+    // mgr := &MyManager{...}
+    // go mgr.Run(ctx, fleet)
+
+    tui.Run(ctx, fleet, cfg.TUI, nil)
+}
+```
+
+## Example Binaries
 
 ### Tasks from Markdown file
 
@@ -34,70 +64,35 @@ command: claude
 
 - delay: 2, inject: "What is today's date?"
 - delay: 8, inject: "/exit"
-
-## Task: Interactive session
-command: claude
-
-- delay: 3, inject: "Tell me a joke"
 ```
 
-Launch:
+Run:
 
 ```bash
-agentfleet --source tasks.md
+./agentfleet --source tasks.md
 ```
 
-### Tasks from JSON/YAML file
-
-Create `tasks.json`:
-
-```json
-[
-  {
-    "id": "task-1",
-    "name": "Get today's date",
-    "command": "claude",
-    "steps": [
-      {"delay": 2, "command": "What is today's date?"},
-      {"delay": 8, "command": "/exit"}
-    ]
-  },
-  {
-    "id": "task-2",
-    "name": "Interactive session",
-    "command": "claude",
-    "steps": [
-      {"delay": 3, "command": "Tell me a joke"}
-    ]
-  }
-]
-```
-
-Launch with JSON:
+### Tasks from JSON/YAML
 
 ```bash
-agentfleet --source tasks.json
+./agentfleet --source tasks.json
+./agentfleet --source tasks.yaml
 ```
 
-Or with YAML (`tasks.yaml`):
+### Tasks from HTTP
 
 ```bash
-agentfleet --source tasks.yaml
+go run ./examples/taskserver/ &
+./agentfleet --source http://localhost:8080/tasks
 ```
 
 ### LLM-generated tasks
 
-Generate tasks using Claude:
-
 ```bash
-ANTHROPIC_API_KEY=sk-... agentfleet --generate "Run 5 different coding challenges"
+ANTHROPIC_API_KEY=sk-... go run ./examples/generate-manager/ --generate "Run 5 coding challenges"
 ```
 
-This calls the Claude API to generate appropriate task definitions based on your goal. You'll be shown the generated tasks and asked to confirm before launch.
-
 ## Fleet Dashboard
-
-The dashboard displays all agents in a grid layout:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -130,62 +125,59 @@ The dashboard displays all agents in a grid layout:
 
 ## Attaching to a Session
 
+Build the attach binary:
+
+```bash
+go build -o attach ./examples/attach/
+```
+
 Open a new terminal and attach to a running agent:
 
 ```bash
 ./attach task-1
 ```
 
-This connects to the agent's Unix socket at `/tmp/agentfleet-task-1.sock`, giving you full interactive control as if you were running the command directly. Your terminal stays in sync with the dashboard — you can type, the output appears in both places, and you can detach cleanly.
+This connects to the agent's Unix socket at `/tmp/agentfleet-task-1.sock`, giving you full interactive control. Your terminal stays in sync with the dashboard.
 
 ## Extending
 
-### Custom Task Type
+### Custom Manager
 
-Implement the `fleet.Task` interface or embed `fleet.BasicTask`:
-
-```go
-package mytasks
-
-import "github.com/hoaitan/agentfleet/internal/fleet"
-
-type MyTask struct {
-    *fleet.BasicTask
-    CustomField string
-}
-
-// Optional: add custom methods or override defaults
-func (t *MyTask) ID() string {
-    return t.TaskID // or compute from CustomField
-}
-```
-
-Use it in a custom source:
+Implement `Manager` to control how tasks are loaded and when they run:
 
 ```go
-package mysource
+package mymgr
 
-import "github.com/hoaitan/agentfleet/internal/source"
+import (
+    "context"
+    agentfleet "github.com/hoaitan/agentfleet"
+)
 
-type MySource struct {
-    Path string
-}
+type GRPCManager struct{ client pb.TaskClient }
 
-func (s *MySource) Load() ([]fleet.Task, error) {
-    // Parse path, return []mytasks.MyTask cast to []fleet.Task
+func (m *GRPCManager) Run(ctx context.Context, fleet *agentfleet.Fleet) error {
+    stream, _ := m.client.TaskStream(ctx)
+    for {
+        task, err := stream.Recv()
+        if err != nil { return err }
+        ag := agentfleet.NewPtyAgent(agentfleet.CommandFields(task))
+        r  := agentfleet.NewRunner(task, ag, agentfleet.DefaultConfig().Fleet)
+        fleet.Add(ctx, r)
+        r.Start()
+        go func(r *agentfleet.Runner) {
+            <-r.Done()
+            stream.Send(&pb.Result{Id: r.Task().ID(), Status: r.Status().String()})
+        }(r)
+    }
 }
 ```
 
 ### Custom Hook
 
-Implement the `hook.Hook` interface to process bytes flowing in/out:
-
 ```go
 package myhooks
 
-import (
-    "github.com/hoaitan/agentfleet/internal/hook"
-)
+import "github.com/hoaitan/agentfleet/hook"
 
 type MyHook struct{}
 
@@ -197,42 +189,33 @@ func (h *MyHook) Process(data []byte, dir hook.Dir) ([]byte, error) {
 }
 ```
 
-Use it:
+### Custom Task
 
 ```go
-chain := hook.Chain{
-    &myhooks.MyHook{},
-    &hook.FileLogger{Path: "/tmp/session.log"},
+package mytasks
+
+import agentfleet "github.com/hoaitan/agentfleet"
+
+type MyTask struct {
+    agentfleet.BasicTask
+    CustomField string
 }
-// Pass chain to Runner or Proxy
 ```
 
 ### Custom Source
 
-Implement the `source.Source` interface to load tasks from anywhere:
-
 ```go
 package mysource
 
-import "github.com/hoaitan/agentfleet/internal/source"
+import (
+    agentfleet "github.com/hoaitan/agentfleet"
+    "github.com/hoaitan/agentfleet/source"
+)
 
-type DatabaseSource struct {
-    URL string
-}
+type DatabaseSource struct{ URL string }
 
-func (s *DatabaseSource) Load() ([]fleet.Task, error) {
-    // Query database, return []fleet.Task
-}
-```
-
-Then wire it in `cmd/agentfleet/main.go`:
-
-```go
-func loadTasks(src, generate string) ([]fleet.Task, error) {
-    if src == "db://..." {
-        return (&mysource.DatabaseSource{URL: src}).Load()
-    }
-    // ... existing logic
+func (s *DatabaseSource) Load() ([]agentfleet.Task, error) {
+    // Query database, return []agentfleet.Task
 }
 ```
 
@@ -240,14 +223,15 @@ func loadTasks(src, generate string) ([]fleet.Task, error) {
 
 | Package | Responsibility |
 |---------|-----------------|
-| `cmd/agentfleet` | Main TUI dashboard, task loading, socket server, iTerm2 tab opener |
-| `cmd/attach` | Terminal client: connects to agent socket and multiplexes I/O |
-| `internal/fleet` | Core task/runner lifecycle: Task interface, BasicTask, Runner state machine |
-| `internal/agent` | PTY abstraction: Agent interface, PtyAgent (start/stop/read/write), MockAgent for tests |
-| `internal/source` | Task loaders: MarkdownSource, FileSource (JSON/YAML), HTTPSource, GenerateSource (Claude API) |
-| `internal/hook` | Byte processing pipeline: Hook interface, Chain, FileLogger |
-| `internal/proxy` | PTY proxying: split I/O streams into PTY + socket, handle resize signals |
-| `internal` | Imports only, no implementation |
+| `github.com/hoaitan/agentfleet` | Core: `Task`, `Fleet`, `Runner`, `Manager`, `Agent`, `Config` |
+| `agentfleet/tui` | Bubbletea TUI dashboard — `tui.Run(ctx, fleet, cfg, onAttach)` |
+| `agentfleet/source` | Task loaders: `FileSource`, `MarkdownSource`, `HTTPSource`, `GenerateSource`, `StepTask` |
+| `agentfleet/hook` | Byte processing: `Hook`, `Chain`, `FileLogger`, `Logger` |
+| `examples/file-manager` | Example: load tasks from JSON/YAML/Markdown |
+| `examples/http-manager` | Example: load tasks from HTTP endpoint |
+| `examples/generate-manager` | Example: generate tasks with Claude API |
+| `examples/attach` | Terminal client: attach to a running agent's socket |
+| `examples/taskserver` | Example HTTP server serving task definitions |
 
 ## License
 
