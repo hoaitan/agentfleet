@@ -12,6 +12,8 @@ const (
 
 func (s Status) String() string {
 	switch s {
+	case StatusPending:
+		return "pending"
 	case StatusRunning:
 		return "running"
 	case StatusDone:

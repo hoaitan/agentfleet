@@ -39,8 +39,24 @@ func TestDefaultConfig(t *testing.T) {
 }
 
 func TestAgentConfigFromTerminalFallback(t *testing.T) {
-	// In CI / non-TTY, should return defaults without error
+	// In non-TTY (CI), AgentConfigFromTerminal falls back to defaults.
+	// This test validates the fallback returns the expected default values.
+	// If running in a real terminal, the values will be whatever the terminal reports (still > 0).
 	cfg := agentfleet.AgentConfigFromTerminal()
 	assert.Greater(t, cfg.PTYRows, 0)
 	assert.Greater(t, cfg.PTYCols, 0)
+}
+
+func TestAgentConfigFromTerminalValues(t *testing.T) {
+	// Defaults must be non-zero and match DefaultConfig
+	defaults := agentfleet.DefaultConfig().Agent
+	assert.Equal(t, 24, defaults.PTYRows)
+	assert.Equal(t, 220, defaults.PTYCols)
+}
+
+func TestStatusString(t *testing.T) {
+	assert.Equal(t, "pending", agentfleet.StatusPending.String())
+	assert.Equal(t, "running", agentfleet.StatusRunning.String())
+	assert.Equal(t, "done", agentfleet.StatusDone.String())
+	assert.Equal(t, "failed", agentfleet.StatusFailed.String())
 }
