@@ -18,7 +18,7 @@ func TestProxyPassThrough(t *testing.T) {
 	pr, pw := io.Pipe()
 	out := &collectWriter{}
 
-	p := proxy.New(ag, pr, out, hook.Chain{}, hook.Chain{})
+	p := proxy.New(ag, pr, out, 24, 80, hook.Chain{}, hook.Chain{})
 
 	done := make(chan error, 1)
 	go func() { done <- p.Run() }()
@@ -38,7 +38,7 @@ func TestProxyInject(t *testing.T) {
 	pr, pw := io.Pipe()
 	out := &collectWriter{}
 
-	p := proxy.New(ag, pr, out, hook.Chain{}, hook.Chain{})
+	p := proxy.New(ag, pr, out, 24, 80, hook.Chain{}, hook.Chain{})
 	done := make(chan error, 1)
 	go func() { done <- p.Run() }()
 

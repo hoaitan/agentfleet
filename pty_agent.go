@@ -16,12 +16,14 @@ type PtyAgent struct {
 	ptmx *os.File
 	done chan struct{}
 	once sync.Once
+	cfg  AgentConfig
 }
 
-func NewPtyAgent(command []string) *PtyAgent {
+func NewPtyAgent(command []string, cfg AgentConfig) *PtyAgent {
 	return &PtyAgent{
 		cmd:  exec.Command(command[0], command[1:]...),
 		done: make(chan struct{}),
+		cfg:  cfg,
 	}
 }
 

@@ -72,8 +72,8 @@ func main() {
 			log.Fatalf("task %q has invalid ID %q", task.Name(), task.ID())
 		}
 
-		ag := agentfleet.NewPtyAgent(agentfleet.CommandFields(task))
-		r := agentfleet.NewRunner(task, ag, cfg.Fleet)
+		ag := agentfleet.NewPtyAgent(agentfleet.CommandFields(task), cfg.Agent)
+		r := agentfleet.NewRunner(task, ag, cfg.Fleet, cfg.Agent)
 		r.Start()
 
 		if err := fleet.Add(ctx, r); err != nil {

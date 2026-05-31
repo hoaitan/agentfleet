@@ -98,8 +98,9 @@ func (t *outputTee) Process(p []byte, dir hook.Dir) ([]byte, error) {
 // serves a Unix socket for attach, and maintains an output ring buffer.
 // Step injection is not the Runner's concern — callers write to StdinWriter().
 type Runner struct {
-	task Task
-	cfg  FleetConfig
+	task     Task
+	cfg      FleetConfig
+	agentCfg AgentConfig
 
 	status atomic.Int32
 
@@ -116,18 +117,19 @@ type Runner struct {
 	logFile    *os.File
 }
 
-func NewRunner(task Task, ag Agent, cfg FleetConfig) *Runner {
+func NewRunner(task Task, ag Agent, cfg FleetConfig, agentCfg AgentConfig) *Runner {
 	rbSize := cfg.RingBufferSize
 	if rbSize <= 0 {
 		rbSize = 200
 	}
 	return &Runner{
-		task: task,
-		cfg:  cfg,
-		ag:   ag,
-		sw:   &switchWriter{w: io.Discard},
-		ring: newRingBuffer(rbSize),
-		done: make(chan struct{}),
+		task:     task,
+		cfg:      cfg,
+		agentCfg: agentCfg,
+		ag:       ag,
+		sw:       &switchWriter{w: io.Discard},
+		ring:     newRingBuffer(rbSize),
+		done:     make(chan struct{}),
 	}
 }
 
@@ -152,7 +154,7 @@ func (r *Runner) Start() {
 		}
 
 		ri := &ringHook{buf: r.ring}
-		r.prx = proxy.New(r.ag, pr, r.sw, hook.Chain{}, hook.Chain{tee, ri})
+		r.prx = proxy.New(r.ag, pr, r.sw, r.agentCfg.PTYRows, r.agentCfg.PTYCols, hook.Chain{}, hook.Chain{tee, ri})
 		r.setStatus(StatusRunning)
 
 		if r.cfg.SocketDir != "" {

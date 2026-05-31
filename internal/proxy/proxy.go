@@ -27,12 +27,14 @@ type Proxy struct {
 	ag       agentProxy
 	in       io.Reader
 	out      io.Writer
+	rows     int
+	cols     int
 	inChain  hook.Chain
 	outChain hook.Chain
 }
 
-func New(ag agentProxy, in io.Reader, out io.Writer, inChain, outChain hook.Chain) *Proxy {
-	return &Proxy{ag: ag, in: in, out: out, inChain: inChain, outChain: outChain}
+func New(ag agentProxy, in io.Reader, out io.Writer, rows, cols int, inChain, outChain hook.Chain) *Proxy {
+	return &Proxy{ag: ag, in: in, out: out, rows: rows, cols: cols, inChain: inChain, outChain: outChain}
 }
 
 // Inject writes bytes into the agent's input stream as if the user typed them.
@@ -47,7 +49,7 @@ func (p *Proxy) Inject(data []byte) error {
 
 // Run starts the wrapped command and blocks until it exits.
 func (p *Proxy) Run() error {
-	rows, cols := 24, 80
+	rows, cols := p.rows, p.cols
 
 	if f, ok := p.in.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		if c, r, err := term.GetSize(int(f.Fd())); err == nil {

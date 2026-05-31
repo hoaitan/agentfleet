@@ -23,7 +23,7 @@ func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
 func TestRunnerStartAndStop(t *testing.T) {
 	ag := agentfleet.NewMockAgent()
 	task := &agentfleet.BasicTask{TaskID: "t1", TaskName: "Test", Cmd: "echo"}
-	r := agentfleet.NewRunner(task, ag, testCfg())
+	r := agentfleet.NewRunner(task, ag, testCfg(), agentfleet.AgentConfig{})
 
 	assert.Equal(t, agentfleet.StatusPending, r.Status())
 	r.Start()
@@ -41,7 +41,7 @@ func TestRunnerStartAndStop(t *testing.T) {
 func TestRunnerSetOutput(t *testing.T) {
 	ag := agentfleet.NewMockAgent()
 	task := &agentfleet.BasicTask{TaskID: "t2", TaskName: "Out", Cmd: "echo"}
-	r := agentfleet.NewRunner(task, ag, testCfg())
+	r := agentfleet.NewRunner(task, ag, testCfg(), agentfleet.AgentConfig{})
 	r.Start()
 
 	var mu sync.Mutex
@@ -68,7 +68,7 @@ func TestRunnerSetOutput(t *testing.T) {
 func TestRunnerStdinWriter(t *testing.T) {
 	ag := agentfleet.NewMockAgent()
 	task := &agentfleet.BasicTask{TaskID: "t3", TaskName: "Stdin", Cmd: "echo"}
-	r := agentfleet.NewRunner(task, ag, testCfg())
+	r := agentfleet.NewRunner(task, ag, testCfg(), agentfleet.AgentConfig{})
 	r.Start()
 
 	_, err := r.StdinWriter().Write([]byte("hello\r"))
@@ -85,7 +85,7 @@ func TestRunnerStdinWriter(t *testing.T) {
 func TestRunnerStartIdempotent(t *testing.T) {
 	ag := agentfleet.NewMockAgent()
 	task := &agentfleet.BasicTask{TaskID: "t4", TaskName: "Idempotent", Cmd: "echo"}
-	r := agentfleet.NewRunner(task, ag, testCfg())
+	r := agentfleet.NewRunner(task, ag, testCfg(), agentfleet.AgentConfig{})
 
 	r.Start()
 	r.Start() // second call should be a no-op
