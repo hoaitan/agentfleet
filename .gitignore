@@ -1,0 +1,4 @@
+agentfleet
+attach
+/tmp/agentfleet-*.sock
+*.log
