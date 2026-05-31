@@ -1,7 +1,7 @@
 package fleet_test
 
 import (
-	"bytes"
+	"sync"
 	"testing"
 	"time"
 
@@ -11,6 +11,10 @@ import (
 	"github.com/tan/agentfleet/internal/agent"
 	"github.com/tan/agentfleet/internal/fleet"
 )
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
 
 func TestRunnerStartAndStop(t *testing.T) {
 	ag := agent.NewMockAgent()
@@ -36,12 +40,22 @@ func TestRunnerSetOutput(t *testing.T) {
 	r := fleet.NewRunner(task, ag)
 	r.Start()
 
-	var buf bytes.Buffer
-	r.SetOutput(&buf)
+	var mu sync.Mutex
+	var captured []byte
+	r.SetOutput(writerFunc(func(p []byte) (int, error) {
+		mu.Lock()
+		captured = append(captured, p...)
+		mu.Unlock()
+		return len(p), nil
+	}))
+
 	ag.SimulateOutput([]byte("agent says hi")) //nolint:errcheck
 	time.Sleep(50 * time.Millisecond)
 
-	assert.Contains(t, buf.String(), "agent says hi")
+	mu.Lock()
+	got := string(captured)
+	mu.Unlock()
+	assert.Contains(t, got, "agent says hi")
 
 	ag.Stop()
 	<-r.Done()
