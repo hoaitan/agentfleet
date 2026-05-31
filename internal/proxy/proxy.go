@@ -8,8 +8,8 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/tan/agentfleet/internal/agent"
-	"github.com/tan/agentfleet/internal/hook"
+	"github.com/hoaitan/agentfleet/internal/agent"
+	"github.com/hoaitan/agentfleet/internal/hook"
 )
 
 // Proxy is a transparent PTY proxy: bytes flow stdin→agent and agent→stdout

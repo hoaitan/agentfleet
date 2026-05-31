@@ -10,9 +10,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/tan/agentfleet/internal/agent"
-	"github.com/tan/agentfleet/internal/hook"
-	"github.com/tan/agentfleet/internal/proxy"
+	"github.com/hoaitan/agentfleet/internal/agent"
+	"github.com/hoaitan/agentfleet/internal/hook"
+	"github.com/hoaitan/agentfleet/internal/proxy"
 )
 
 // switchWriter is an io.Writer whose target can be swapped at runtime.
@@ -168,11 +168,11 @@ func (r *Runner) Start() {
 	})
 }
 
-func (r *Runner) Status() Status       { return Status(r.status.Load()) }
+func (r *Runner) Status() Status        { return Status(r.status.Load()) }
 func (r *Runner) Done() <-chan struct{} { return r.done }
-func (r *Runner) Lines() []string      { return r.ring.snapshot() }
-func (r *Runner) Task() Task           { return r.task }
-func (r *Runner) setStatus(s Status)  { r.status.Store(int32(s)) }
+func (r *Runner) Lines() []string       { return r.ring.snapshot() }
+func (r *Runner) Task() Task            { return r.task }
+func (r *Runner) setStatus(s Status)    { r.status.Store(int32(s)) }
 
 func (r *Runner) runSteps() {
 	for _, step := range r.task.Steps() {

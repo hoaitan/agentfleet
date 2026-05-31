@@ -11,9 +11,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/tan/agentfleet/internal/agent"
-	"github.com/tan/agentfleet/internal/fleet"
-	"github.com/tan/agentfleet/internal/source"
+	"github.com/hoaitan/agentfleet/internal/agent"
+	"github.com/hoaitan/agentfleet/internal/fleet"
+	"github.com/hoaitan/agentfleet/internal/source"
 )
 
 // validTaskID reports whether id is safe for use in file paths and shell strings.

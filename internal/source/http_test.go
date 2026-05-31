@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tan/agentfleet/internal/fleet"
-	"github.com/tan/agentfleet/internal/source"
+	"github.com/hoaitan/agentfleet/internal/fleet"
+	"github.com/hoaitan/agentfleet/internal/source"
 )
 
 func TestHTTPSource(t *testing.T) {

@@ -5,7 +5,7 @@ A Go tool for running multiple AI agent CLI sessions in parallel with a unified 
 ## Module
 
 ```
-github.com/tan/agentfleet
+github.com/hoaitan/agentfleet
 ```
 
 ## Package Layout

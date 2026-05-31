@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/tan/agentfleet/internal/fleet"
+	"github.com/hoaitan/agentfleet/internal/fleet"
 )
 
 var generateClient = &http.Client{Timeout: 60 * time.Second}

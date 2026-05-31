@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tan/agentfleet/internal/hook"
+	"github.com/hoaitan/agentfleet/internal/hook"
 )
 
 func TestEmptyChainPassThrough(t *testing.T) {

@@ -8,9 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tan/agentfleet/internal/agent"
-	"github.com/tan/agentfleet/internal/hook"
-	"github.com/tan/agentfleet/internal/proxy"
+	"github.com/hoaitan/agentfleet/internal/agent"
+	"github.com/hoaitan/agentfleet/internal/hook"
+	"github.com/hoaitan/agentfleet/internal/proxy"
 )
 
 func TestProxyPassThrough(t *testing.T) {

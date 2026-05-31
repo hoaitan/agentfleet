@@ -1,4 +1,4 @@
-module github.com/tan/agentfleet
+module github.com/hoaitan/agentfleet
 
 go 1.26.1
 

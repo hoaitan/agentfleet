@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tan/agentfleet/internal/agent"
-	"github.com/tan/agentfleet/internal/fleet"
+	"github.com/hoaitan/agentfleet/internal/agent"
+	"github.com/hoaitan/agentfleet/internal/fleet"
 )
 
 type writerFunc func([]byte) (int, error)

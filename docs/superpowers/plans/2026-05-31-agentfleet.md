@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.26, `github.com/creack/pty`, `golang.org/x/term`, `golang.org/x/sys`, `github.com/charmbracelet/bubbletea`, `github.com/charmbracelet/lipgloss`, `github.com/stretchr/testify`, `gopkg.in/yaml.v3`
 
-**Module path:** `github.com/tan/agentfleet` (update if your GitHub username differs)
+**Module path:** `github.com/hoaitan/agentfleet` (update if your GitHub username differs)
 
 **Source repo to reference:** `~/try/claude-code-bypass/` — read files from there when porting.
 
@@ -78,7 +78,7 @@ agentfleet/
 - [ ] **Step 1: Write go.mod**
 
 ```
-module github.com/tan/agentfleet
+module github.com/hoaitan/agentfleet
 
 go 1.26.1
 
@@ -116,7 +116,7 @@ Expected: go.sum is created, no errors.
 
 ```bash
 git add go.mod go.sum .gitignore
-git commit -m "feat: initialize module github.com/tan/agentfleet"
+git commit -m "feat: initialize module github.com/hoaitan/agentfleet"
 ```
 
 ---
@@ -143,7 +143,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tan/agentfleet/internal/hook"
+	"github.com/hoaitan/agentfleet/internal/hook"
 )
 
 func TestEmptyChainPassThrough(t *testing.T) {
@@ -370,7 +370,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tan/agentfleet/internal/agent"
+	"github.com/hoaitan/agentfleet/internal/agent"
 )
 
 func TestMockAgentRoundTrip(t *testing.T) {
@@ -716,9 +716,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tan/agentfleet/internal/agent"
-	"github.com/tan/agentfleet/internal/hook"
-	"github.com/tan/agentfleet/internal/proxy"
+	"github.com/hoaitan/agentfleet/internal/agent"
+	"github.com/hoaitan/agentfleet/internal/hook"
+	"github.com/hoaitan/agentfleet/internal/proxy"
 )
 
 func TestProxyPassThrough(t *testing.T) {
@@ -788,8 +788,8 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/tan/agentfleet/internal/agent"
-	"github.com/tan/agentfleet/internal/hook"
+	"github.com/hoaitan/agentfleet/internal/agent"
+	"github.com/hoaitan/agentfleet/internal/hook"
 )
 
 // Proxy is a transparent PTY proxy: bytes flow stdin→agent and agent→stdout
@@ -953,7 +953,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/tan/agentfleet/internal/fleet"
+	"github.com/hoaitan/agentfleet/internal/fleet"
 )
 
 func TestBasicTaskImplementsTask(t *testing.T) {
@@ -1075,8 +1075,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tan/agentfleet/internal/agent"
-	"github.com/tan/agentfleet/internal/fleet"
+	"github.com/hoaitan/agentfleet/internal/agent"
+	"github.com/hoaitan/agentfleet/internal/fleet"
 )
 
 func TestRunnerStartAndStop(t *testing.T) {
@@ -1160,9 +1160,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/tan/agentfleet/internal/agent"
-	"github.com/tan/agentfleet/internal/hook"
-	"github.com/tan/agentfleet/internal/proxy"
+	"github.com/hoaitan/agentfleet/internal/agent"
+	"github.com/hoaitan/agentfleet/internal/hook"
+	"github.com/hoaitan/agentfleet/internal/proxy"
 )
 
 // switchWriter is an io.Writer whose target can be swapped at runtime.
@@ -1411,8 +1411,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tan/agentfleet/internal/fleet"
-	"github.com/tan/agentfleet/internal/source"
+	"github.com/hoaitan/agentfleet/internal/fleet"
+	"github.com/hoaitan/agentfleet/internal/source"
 )
 
 func TestHTTPSource(t *testing.T) {
@@ -1456,7 +1456,7 @@ Expected: compile error.
 ```go
 package source
 
-import "github.com/tan/agentfleet/internal/fleet"
+import "github.com/hoaitan/agentfleet/internal/fleet"
 
 // Source loads a list of tasks from some external system.
 // Implement this interface to add custom task sources.
@@ -1476,7 +1476,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/tan/agentfleet/internal/fleet"
+	"github.com/hoaitan/agentfleet/internal/fleet"
 )
 
 // HTTPSource loads tasks from a JSON HTTP endpoint.
@@ -1553,7 +1553,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tan/agentfleet/internal/source"
+	"github.com/hoaitan/agentfleet/internal/source"
 )
 
 func writeTempFile(t *testing.T, content string) string {
@@ -1637,7 +1637,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tan/agentfleet/internal/fleet"
+	"github.com/hoaitan/agentfleet/internal/fleet"
 )
 
 // MarkdownSource loads tasks from a Markdown file.
@@ -1776,7 +1776,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tan/agentfleet/internal/source"
+	"github.com/hoaitan/agentfleet/internal/source"
 )
 
 func TestFileSourceJSON(t *testing.T) {
@@ -1847,7 +1847,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/tan/agentfleet/internal/fleet"
+	"github.com/hoaitan/agentfleet/internal/fleet"
 )
 
 // FileSource loads tasks from a local JSON or YAML file.
@@ -1929,7 +1929,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tan/agentfleet/internal/source"
+	"github.com/hoaitan/agentfleet/internal/source"
 )
 
 func TestGenerateSourceParsesResponse(t *testing.T) {
@@ -1987,7 +1987,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/tan/agentfleet/internal/fleet"
+	"github.com/hoaitan/agentfleet/internal/fleet"
 )
 
 const defaultAPIURL = "https://api.anthropic.com/v1/messages"
@@ -2127,7 +2127,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/tan/agentfleet/internal/fleet"
+	"github.com/hoaitan/agentfleet/internal/fleet"
 )
 
 type taskSession interface {
@@ -2211,7 +2211,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/tan/agentfleet/internal/fleet"
+	"github.com/hoaitan/agentfleet/internal/fleet"
 )
 
 const previewLines = 3
@@ -2481,9 +2481,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/tan/agentfleet/internal/agent"
-	"github.com/tan/agentfleet/internal/fleet"
-	"github.com/tan/agentfleet/internal/source"
+	"github.com/hoaitan/agentfleet/internal/agent"
+	"github.com/hoaitan/agentfleet/internal/fleet"
+	"github.com/hoaitan/agentfleet/internal/source"
 )
 
 func main() {
@@ -2687,7 +2687,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/tan/agentfleet/internal/fleet"
+	"github.com/hoaitan/agentfleet/internal/fleet"
 )
 
 var tasks = []fleet.BasicTask{
@@ -2760,14 +2760,14 @@ Run your AI agent fleet from a single terminal dashboard.
 ## Install
 
 ```bash
-go install github.com/tan/agentfleet/cmd/agentfleet@latest
-go install github.com/tan/agentfleet/cmd/attach@latest
+go install github.com/hoaitan/agentfleet/cmd/agentfleet@latest
+go install github.com/hoaitan/agentfleet/cmd/attach@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/tan/agentfleet
+git clone https://github.com/hoaitan/agentfleet
 cd agentfleet
 go build -o agentfleet ./cmd/agentfleet/
 go build -o attach ./cmd/attach/
@@ -2926,7 +2926,7 @@ A Go tool for running a fleet of AI agent CLI sessions in parallel from a single
 
 ## Module
 
-`github.com/tan/agentfleet`
+`github.com/hoaitan/agentfleet`
 
 ## Package layout
 

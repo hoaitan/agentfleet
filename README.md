@@ -9,14 +9,14 @@ agentfleet is a Go tool for running multiple interactive CLI sessions (Claude Co
 Download pre-built binaries or build from source:
 
 ```bash
-go install github.com/tan/agentfleet/cmd/agentfleet@latest
-go install github.com/tan/agentfleet/cmd/attach@latest
+go install github.com/hoaitan/agentfleet/cmd/agentfleet@latest
+go install github.com/hoaitan/agentfleet/cmd/attach@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/tan/agentfleet
+git clone https://github.com/hoaitan/agentfleet
 cd agentfleet
 go build -o agentfleet ./cmd/agentfleet/
 go build -o attach ./cmd/attach/
@@ -147,7 +147,7 @@ Implement the `fleet.Task` interface or embed `fleet.BasicTask`:
 ```go
 package mytasks
 
-import "github.com/tan/agentfleet/internal/fleet"
+import "github.com/hoaitan/agentfleet/internal/fleet"
 
 type MyTask struct {
     *fleet.BasicTask
@@ -165,7 +165,7 @@ Use it in a custom source:
 ```go
 package mysource
 
-import "github.com/tan/agentfleet/internal/source"
+import "github.com/hoaitan/agentfleet/internal/source"
 
 type MySource struct {
     Path string
@@ -184,7 +184,7 @@ Implement the `hook.Hook` interface to process bytes flowing in/out:
 package myhooks
 
 import (
-    "github.com/tan/agentfleet/internal/hook"
+    "github.com/hoaitan/agentfleet/internal/hook"
 )
 
 type MyHook struct{}
@@ -214,7 +214,7 @@ Implement the `source.Source` interface to load tasks from anywhere:
 ```go
 package mysource
 
-import "github.com/tan/agentfleet/internal/source"
+import "github.com/hoaitan/agentfleet/internal/source"
 
 type DatabaseSource struct {
     URL string
