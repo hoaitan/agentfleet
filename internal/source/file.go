@@ -9,7 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/tan/agentfleet/internal/fleet"
+	"github.com/hoaitan/agentfleet/internal/fleet"
 )
 
 // FileSource loads tasks from a local JSON or YAML file.

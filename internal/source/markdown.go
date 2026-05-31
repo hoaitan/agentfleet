@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tan/agentfleet/internal/fleet"
+	"github.com/hoaitan/agentfleet/internal/fleet"
 )
 
 // MarkdownSource loads tasks from a Markdown file.

@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/tan/agentfleet/internal/fleet"
+	"github.com/hoaitan/agentfleet/internal/fleet"
 )
 
 func TestBasicTaskImplementsTask(t *testing.T) {

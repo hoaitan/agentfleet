@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tan/agentfleet/internal/agent"
+	"github.com/hoaitan/agentfleet/internal/agent"
 )
 
 func TestMockAgentRoundTrip(t *testing.T) {

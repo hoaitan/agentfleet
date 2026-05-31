@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tan/agentfleet/internal/source"
+	"github.com/hoaitan/agentfleet/internal/source"
 )
 
 func writeTempFile(t *testing.T, content string) string {

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/tan/agentfleet/internal/fleet"
+	"github.com/hoaitan/agentfleet/internal/fleet"
 )
 
 var httpClient = &http.Client{Timeout: 30 * time.Second}

@@ -11,7 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/tan/agentfleet/internal/fleet"
+	"github.com/hoaitan/agentfleet/internal/fleet"
 )
 
 const previewLines = 3
