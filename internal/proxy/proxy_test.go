@@ -8,13 +8,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	agentfleet "github.com/hoaitan/agentfleet"
 	"github.com/hoaitan/agentfleet/hook"
-	"github.com/hoaitan/agentfleet/internal/agent"
 	"github.com/hoaitan/agentfleet/internal/proxy"
 )
 
 func TestProxyPassThrough(t *testing.T) {
-	ag := agent.NewMockAgent()
+	ag := agentfleet.NewMockAgent()
 	pr, pw := io.Pipe()
 	out := &collectWriter{}
 
@@ -34,7 +34,7 @@ func TestProxyPassThrough(t *testing.T) {
 }
 
 func TestProxyInject(t *testing.T) {
-	ag := agent.NewMockAgent()
+	ag := agentfleet.NewMockAgent()
 	pr, pw := io.Pipe()
 	out := &collectWriter{}
 
