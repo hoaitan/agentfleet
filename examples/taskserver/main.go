@@ -4,7 +4,7 @@
 // Usage:
 //
 //	go run ./examples/taskserver/
-//	agentfleet --source http://localhost:8080/tasks
+//	go run ./examples/http-manager/ --source http://localhost:8080/tasks
 package main
 
 import (
@@ -13,15 +13,15 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/hoaitan/agentfleet/internal/fleet"
+	"github.com/hoaitan/agentfleet/source"
 )
 
-var tasks = []fleet.BasicTask{
+var tasks = []source.StepTask{
 	{
 		TaskID:   "task-1",
 		TaskName: "Ask today's date",
 		Cmd:      "claude",
-		TaskSteps: []fleet.Step{
+		TaskSteps: []source.Step{
 			{Delay: 2, Command: "What is today's date?"},
 			{Delay: 8, Command: "/exit"},
 		},
@@ -30,7 +30,7 @@ var tasks = []fleet.BasicTask{
 		TaskID:   "task-2",
 		TaskName: "Interactive session",
 		Cmd:      "claude",
-		TaskSteps: []fleet.Step{
+		TaskSteps: []source.Step{
 			{Delay: 2, Command: "What is tomorrow's date?"},
 		},
 	},
