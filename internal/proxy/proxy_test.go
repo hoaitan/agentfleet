@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/hoaitan/agentfleet/hook"
 	"github.com/hoaitan/agentfleet/internal/agent"
-	"github.com/hoaitan/agentfleet/internal/hook"
 	"github.com/hoaitan/agentfleet/internal/proxy"
 )
 

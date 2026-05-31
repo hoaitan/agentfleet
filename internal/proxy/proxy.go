@@ -8,21 +8,30 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/hoaitan/agentfleet/internal/agent"
-	"github.com/hoaitan/agentfleet/internal/hook"
+	"github.com/hoaitan/agentfleet/hook"
 )
 
+// agentProxy is a local interface satisfied by any Agent (avoids importing root package).
+type agentProxy interface {
+	Start(rows, cols int) error
+	Write(p []byte) (int, error)
+	Read(p []byte) (int, error)
+	Resize(rows, cols int) error
+	Stop() error
+	Done() <-chan struct{}
+}
+
 // Proxy is a transparent PTY proxy: bytes flow stdin→agent and agent→stdout
-// through hook chains, with no modification to the user's terminal experience.
+// through hook chains.
 type Proxy struct {
-	ag       agent.Agent
+	ag       agentProxy
 	in       io.Reader
 	out      io.Writer
 	inChain  hook.Chain
 	outChain hook.Chain
 }
 
-func New(ag agent.Agent, in io.Reader, out io.Writer, inChain, outChain hook.Chain) *Proxy {
+func New(ag agentProxy, in io.Reader, out io.Writer, inChain, outChain hook.Chain) *Proxy {
 	return &Proxy{ag: ag, in: in, out: out, inChain: inChain, outChain: outChain}
 }
 
@@ -37,7 +46,6 @@ func (p *Proxy) Inject(data []byte) error {
 }
 
 // Run starts the wrapped command and blocks until it exits.
-// If in is a real terminal (*os.File), Run puts it in raw mode and handles SIGWINCH.
 func (p *Proxy) Run() error {
 	rows, cols := 24, 80
 
