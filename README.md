@@ -12,12 +12,12 @@ Use as a library:
 import agentfleet "github.com/hoaitan/agentfleet"
 ```
 
-Or build the main example binary from source:
+Or try an example directly from source:
 
 ```bash
 git clone https://github.com/hoaitan/agentfleet
-cd agentfleet
-go build -o agentfleet ./examples/file-manager/
+cd agentfleet/examples/file-manager
+go run . --source tasks.md
 ```
 
 ## Library Quick Start
