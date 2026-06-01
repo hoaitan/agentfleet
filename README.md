@@ -55,9 +55,9 @@ func main() {
 
 | Example | Purpose |
 |---------|---------|
-| [http-manager](examples/http-manager/) | Load tasks from an HTTP endpoint |
-| [file-manager](examples/file-manager/) | Load tasks from JSON, YAML, or Markdown files |
-| [generate-manager](examples/generate-manager/) | Generate tasks via Claude API |
+| [http-manager](examples/http-manager/) | Load tasks from an HTTP endpoint and run agents |
+| [file-manager](examples/file-manager/) | Load tasks from JSON, YAML, or Markdown and run agents |
+| [generate-manager](examples/generate-manager/) | Generate tasks via Claude API and run agents |
 
 ## Fleet Dashboard
 
