@@ -1,9 +1,9 @@
 // taskserver is an example HTTP server that serves task definitions to agentfleet.
 // Edit the tasks slice to define your own agent workflows.
 //
-// Usage:
+// Usage (from repo root):
 //
-//	go run ./examples/taskserver/
+//	go run ./examples/http-manager/taskserver/
 //	go run ./examples/http-manager/ --source http://localhost:8080/tasks
 package main
 
