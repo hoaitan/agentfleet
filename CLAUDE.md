@@ -18,10 +18,8 @@ github.com/hoaitan/agentfleet
 | `agentfleet/hook` | Byte processing pipeline: `Hook` interface, `Dir`/`DirIn`/`DirOut`, `Chain`, `FileLogger`, `Logger` |
 | `internal/proxy` | PTY proxying: `Proxy` struct, bidirectional I/O with hook chains, resize signal handling (SIGWINCH) |
 | `examples/file-manager` | Example binary: loads tasks from JSON/YAML/Markdown, runs Fleet + TUI with step injection |
-| `examples/http-manager` | Example binary: fetches tasks from HTTP endpoint, runs Fleet + TUI with step injection |
+| `examples/http-manager` | Example binary: fetches tasks from HTTP endpoint, runs Fleet + TUI with step injection; includes `taskserver/` helper |
 | `examples/generate-manager` | Example binary: generates tasks via Claude API, confirm-before-run, Fleet + TUI |
-| `examples/attach` | Terminal client: connects to `/tmp/agentfleet-<task-id>.sock`, bidirectional I/O, raw terminal mode |
-| `examples/taskserver` | Example HTTP server that serves `source.StepTask` definitions |
 
 ## Key Interfaces
 
@@ -154,7 +152,7 @@ cfg.Agent = agentfleet.AgentConfigFromTerminal() // read from actual terminal
 /tmp/agentfleet-{task-id}.sock
 ```
 
-Configured via `FleetConfig.SocketDir`. Runner creates the socket; `examples/attach` connects to it.
+Configured via `FleetConfig.SocketDir`. Runner creates the socket; any Unix socket client can connect to it.
 
 ### Log Paths
 
@@ -167,9 +165,8 @@ Configured via `FleetConfig.LogDir`. Set to `""` to disable logging.
 ## Build and Test
 
 ```bash
-# Build example binaries
+# Build main example binary
 go build -o agentfleet ./examples/file-manager/
-go build -o attach ./examples/attach/
 
 # Test
 go test ./...
@@ -236,8 +233,10 @@ Run: `./agentfleet --source tasks.yaml`
 ### HTTP
 
 ```bash
-go run ./examples/taskserver/ &
-./agentfleet --source http://localhost:8080/tasks
+# Terminal 1
+go run ./examples/http-manager/taskserver/
+# Terminal 2
+go run ./examples/http-manager/ --source http://localhost:8080/tasks
 ```
 
 ### LLM-generated
@@ -254,7 +253,6 @@ ANTHROPIC_API_KEY=sk-... go run ./examples/generate-manager/ --generate "Run 5 c
 - **PtyAgent**: Platform-specific PTY handling (darwin/linux). Uses `creack/pty` and `syscall.SysProcAttr` for session isolation.
 - **Proxy**: Sits between agent PTY and socket clients. Multiplexes agent output to attached clients, multiplexes client input to agent stdin, applies hooks.
 - **TUI**: Bubbletea app reading from `fleet.Runners()` on each tick. Handles ctx cancellation via `ctxDoneCmd`.
-- **Attach**: Simple Unix socket client. Reads from stdin, writes to socket; reads from socket, writes to stdout. Raw terminal mode via `golang.org/x/term`.
 
 ## Common Tasks
 
