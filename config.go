@@ -28,6 +28,7 @@ type TUIConfig struct {
 	PreviewLines int           // output lines shown in card — default: 3
 	CardWidth    int           // card width in chars        — default: 64
 	RefreshRate  time.Duration // TUI tick interval          — default: 500ms
+	AutoOpen     bool          // auto-open a tab for each task when it starts — default: true
 }
 
 // AgentConfig controls PTY dimensions.
@@ -50,6 +51,7 @@ func DefaultConfig() Config {
 			PreviewLines: 3,
 			CardWidth:    64,
 			RefreshRate:  500 * time.Millisecond,
+			AutoOpen:     true,
 		},
 		Agent: AgentConfig{PTYRows: 24, PTYCols: 220},
 	}

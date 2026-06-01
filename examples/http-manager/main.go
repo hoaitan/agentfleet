@@ -1,5 +1,5 @@
 // http-manager demonstrates loading tasks from an HTTP endpoint.
-// Run examples/taskserver first: go run ./examples/taskserver/
+// Run examples/http-manager/taskserver first: go run ./examples/http-manager/taskserver/
 package main
 
 import (

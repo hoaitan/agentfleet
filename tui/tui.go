@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -73,13 +74,14 @@ func ctxDoneCmd(ctx context.Context) tea.Cmd {
 }
 
 type model struct {
-	fleet    *agentfleet.Fleet
-	cfg      agentfleet.TUIConfig
-	onAttach func(taskID string)
-	ctx      context.Context
-	cursor   int
-	termW    int
-	termH    int
+	fleet      *agentfleet.Fleet
+	cfg        agentfleet.TUIConfig
+	onAttach   func(taskID string)
+	ctx        context.Context
+	cursor     int
+	termW      int
+	termH      int
+	openedTabs map[string]bool // tracks runners that have already had a tab auto-opened
 }
 
 // Run starts the Bubbletea TUI and blocks until the user quits or ctx is cancelled.
@@ -89,19 +91,53 @@ func Run(ctx context.Context, fleet *agentfleet.Fleet, cfg agentfleet.TUIConfig,
 	if onAttach == nil {
 		onAttach = defaultOnAttach
 	}
-	m := model{fleet: fleet, cfg: cfg, onAttach: onAttach, ctx: ctx}
+	m := model{fleet: fleet, cfg: cfg, onAttach: onAttach, ctx: ctx, openedTabs: make(map[string]bool)}
 	_, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
 	return err
 }
 
 func defaultOnAttach(taskID string) {
 	attachBin, _ := filepath.Abs("./attach")
-	script := fmt.Sprintf(`tell application "iTerm2"
-	tell current window
-		create tab with default profile command "%s %s"
-	end tell
-end tell`, attachBin, taskID)
-	exec.Command("osascript", "-e", script).Start() //nolint:errcheck
+	openInTerminal(attachBin, taskID)
+}
+
+func openInTerminal(attachBin, taskID string) {
+	if os.Getenv("TMUX") != "" {
+		exec.Command("tmux", "new-window", attachBin, taskID).Start() //nolint:errcheck
+		return
+	}
+	switch os.Getenv("TERM_PROGRAM") {
+	case "iTerm.app":
+		script := fmt.Sprintf("tell application \"iTerm2\"\ntell current window\ncreate tab with default profile command \"%s %s\"\nend tell\nend tell", attachBin, taskID)
+		exec.Command("osascript", "-e", script).Start() //nolint:errcheck
+	case "Apple_Terminal":
+		script := fmt.Sprintf("tell application \"Terminal\"\ndo script \"%s %s\"\nactivate\nend tell", attachBin, taskID)
+		exec.Command("osascript", "-e", script).Start() //nolint:errcheck
+	case "ghostty":
+		exec.Command("ghostty", "-e", attachBin, taskID).Start() //nolint:errcheck
+	default:
+		if os.Getenv("TERM") == "xterm-kitty" {
+			exec.Command("kitty", attachBin, taskID).Start() //nolint:errcheck
+			return
+		}
+		openLinuxTerminal(attachBin, taskID)
+	}
+}
+
+func openLinuxTerminal(attachBin, taskID string) {
+	candidates := [][]string{
+		{"gnome-terminal", "--", attachBin, taskID},
+		{"xterm", "-e", attachBin, taskID},
+		{"alacritty", "-e", attachBin, taskID},
+		{"konsole", "-e", attachBin, taskID},
+		{"xfce4-terminal", "-e", attachBin + " " + taskID},
+	}
+	for _, args := range candidates {
+		if _, err := exec.LookPath(args[0]); err == nil {
+			exec.Command(args[0], args[1:]...).Start() //nolint:errcheck
+			return
+		}
+	}
 }
 
 func (m model) Init() tea.Cmd {
@@ -113,6 +149,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ctxDoneMsg:
 		return m, tea.Quit
 	case tickMsg:
+		if m.cfg.AutoOpen {
+			for _, r := range m.fleet.Runners() {
+				id := r.Task().ID()
+				if r.Status() == agentfleet.StatusRunning && !m.openedTabs[id] {
+					m.openedTabs[id] = true
+					m.onAttach(id)
+				}
+			}
+		}
 		return m, tickCmd(m.cfg.RefreshRate)
 	case tea.WindowSizeMsg:
 		m.termW = msg.Width
