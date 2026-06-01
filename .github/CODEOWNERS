@@ -1,0 +1,12 @@
+# Code owners for agentfleet.
+# These owners are automatically requested for review on PRs.
+# See https://docs.github.com/articles/about-code-owners
+
+# Default owner for everything in the repo.
+*       @hoaitan
+
+# Security-sensitive areas — keep close review.
+/.github/        @hoaitan
+/hook/           @hoaitan
+/internal/       @hoaitan
+SECURITY.md      @hoaitan

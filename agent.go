@@ -32,10 +32,10 @@ func NewMockAgent() *MockAgent {
 	return &MockAgent{inR: inR, inW: inW, outR: outR, outW: outW, done: make(chan struct{})}
 }
 
-func (m *MockAgent) Start(rows, cols int) error { return nil }
+func (m *MockAgent) Start(rows, cols int) error  { return nil }
 func (m *MockAgent) Write(p []byte) (int, error) { return m.inW.Write(p) }
 func (m *MockAgent) Read(p []byte) (int, error)  { return m.outR.Read(p) }
-func (m *MockAgent) Resize(rows, cols int) error  { return nil }
+func (m *MockAgent) Resize(rows, cols int) error { return nil }
 
 func (m *MockAgent) Stop() error {
 	m.once.Do(func() {

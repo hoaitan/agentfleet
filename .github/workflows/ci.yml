@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Least-privilege default for all jobs.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify modules
+        run: go mod verify
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Check formatting
+        run: |
+          # Exclude vendored third-party code from the gofmt check.
+          gofiles=$(find . -path ./vendor -prune -o -name '*.go' -print)
+          unformatted=$(gofmt -l $gofiles)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-formatted:"
+            echo "$unformatted"
+            echo "----- gofmt diff -----"
+            gofmt -d $gofiles
+            exit 1
+          fi
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test (race + coverage)
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          # Pin a golangci-lint v1 release: action@v6 is built for v1's CLI.
+          # (Upgrading to v2 requires golangci-lint-action@v7+ and a v2 config.)
+          version: v1.64.8
+          # Build golangci-lint from source with this repo's Go toolchain.
+          # Prebuilt v1 binaries are built with Go 1.24 and refuse to run
+          # against a go.mod that targets Go 1.26.3; goinstall avoids that.
+          install-mode: goinstall
+
+  vuln:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...

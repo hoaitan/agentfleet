@@ -74,7 +74,9 @@ func (s *GenerateSource) Load() ([]agentfleet.Task, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		var apiErr struct {
-			Error struct{ Message string `json:"message"` } `json:"error"`
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
 		}
 		json.NewDecoder(resp.Body).Decode(&apiErr) //nolint:errcheck
 		msg := apiErr.Error.Message

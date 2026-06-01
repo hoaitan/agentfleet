@@ -45,8 +45,8 @@ func attach(taskID string) error {
 	}
 	defer term.Restore(int(os.Stdin.Fd()), oldState) //nolint:errcheck
 
-	go io.Copy(conn, os.Stdin)   //nolint:errcheck
-	io.Copy(os.Stdout, conn)     //nolint:errcheck
+	go io.Copy(conn, os.Stdin) //nolint:errcheck
+	io.Copy(os.Stdout, conn)   //nolint:errcheck
 	fmt.Print("\r\n[session ended]\r\n")
 	return nil
 }
