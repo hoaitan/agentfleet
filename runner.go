@@ -237,11 +237,11 @@ func (r *Runner) startSocketServer() {
 	}()
 }
 
-func (r *Runner) Status() Status       { return Status(r.status.Load()) }
+func (r *Runner) Status() Status { return Status(r.status.Load()) }
 func (r *Runner) Done() <-chan struct{} { return r.done }
-func (r *Runner) Lines() []string      { return r.ring.snapshot() }
-func (r *Runner) Task() Task           { return r.task }
-func (r *Runner) setStatus(s Status)   { r.status.Store(int32(s)) }
+func (r *Runner) Lines() []string { return r.ring.snapshot() }
+func (r *Runner) Task() Task { return r.task }
+func (r *Runner) setStatus(s Status) { r.status.Store(int32(s)) }
 
 // SetOutput redirects agent output to w.
 func (r *Runner) SetOutput(w io.Writer) { r.sw.set(w) }

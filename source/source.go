@@ -24,7 +24,7 @@ type StepTask struct {
 	TaskSteps []Step `json:"steps"   yaml:"steps"`
 }
 
-func (t *StepTask) ID()      string { return t.TaskID }
-func (t *StepTask) Name()    string { return t.TaskName }
+func (t *StepTask) ID() string { return t.TaskID }
+func (t *StepTask) Name() string { return t.TaskName }
 func (t *StepTask) Command() string { return t.Cmd }
-func (t *StepTask) Steps()   []Step { return t.TaskSteps }
+func (t *StepTask) Steps() []Step { return t.TaskSteps }

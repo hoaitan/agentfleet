@@ -38,10 +38,14 @@ jobs:
 
       - name: Check formatting
         run: |
-          unformatted=$(gofmt -l .)
+          # Exclude vendored third-party code from the gofmt check.
+          gofiles=$(find . -path ./vendor -prune -o -name '*.go' -print)
+          unformatted=$(gofmt -l $gofiles)
           if [ -n "$unformatted" ]; then
             echo "These files are not gofmt-formatted:"
             echo "$unformatted"
+            echo "----- gofmt diff -----"
+            gofmt -d $gofiles
             exit 1
           fi
 

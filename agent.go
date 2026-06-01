@@ -34,8 +34,8 @@ func NewMockAgent() *MockAgent {
 
 func (m *MockAgent) Start(rows, cols int) error { return nil }
 func (m *MockAgent) Write(p []byte) (int, error) { return m.inW.Write(p) }
-func (m *MockAgent) Read(p []byte) (int, error)  { return m.outR.Read(p) }
-func (m *MockAgent) Resize(rows, cols int) error  { return nil }
+func (m *MockAgent) Read(p []byte) (int, error) { return m.outR.Read(p) }
+func (m *MockAgent) Resize(rows, cols int) error { return nil }
 
 func (m *MockAgent) Stop() error {
 	m.once.Do(func() {
