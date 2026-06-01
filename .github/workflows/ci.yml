@@ -78,6 +78,10 @@ jobs:
           # Pin a golangci-lint v1 release: action@v6 is built for v1's CLI.
           # (Upgrading to v2 requires golangci-lint-action@v7+ and a v2 config.)
           version: v1.64.8
+          # Build golangci-lint from source with this repo's Go toolchain.
+          # Prebuilt v1 binaries are built with Go 1.24 and refuse to run
+          # against a go.mod that targets Go 1.26.3; goinstall avoids that.
+          install-mode: goinstall
 
   vuln:
     name: govulncheck
