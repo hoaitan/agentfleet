@@ -1,0 +1,5 @@
+/agentfleet
+/attach
+/taskserver
+/tmp/agentfleet-*.sock
+*.log
