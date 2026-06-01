@@ -233,8 +233,10 @@ Run: `./agentfleet --source tasks.yaml`
 ### HTTP
 
 ```bash
-go run ./examples/taskserver/ &
-./agentfleet --source http://localhost:8080/tasks
+# Terminal 1
+go run ./examples/http-manager/taskserver/
+# Terminal 2
+go run ./examples/http-manager/ --source http://localhost:8080/tasks
 ```
 
 ### LLM-generated
