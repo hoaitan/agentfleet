@@ -7,12 +7,6 @@ Demonstrates loading tasks from a local file. Supports Markdown, JSON, and YAML 
 - Go 1.21+
 - `claude` CLI (or substitute any command in your task file)
 
-## Build
-
-```bash
-go build -o agentfleet .
-```
-
 ## Run
 
 **Markdown** — create `tasks.md`:
@@ -26,25 +20,19 @@ command: claude
 ```
 
 ```bash
-./agentfleet --source tasks.md
+go run . --source tasks.md
 ```
 
 **JSON:**
 
 ```bash
-./agentfleet --source tasks.json
+go run . --source tasks.json
 ```
 
 **YAML:**
 
 ```bash
-./agentfleet --source tasks.yaml
-```
-
-You can also use `go run` without building:
-
-```bash
-go run . --source tasks.md
+go run . --source tasks.yaml
 ```
 
 ## Task File Formats
