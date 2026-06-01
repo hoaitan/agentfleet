@@ -12,13 +12,12 @@ Use as a library:
 import agentfleet "github.com/hoaitan/agentfleet"
 ```
 
-Or build the example binaries from source:
+Or build the main example binary from source:
 
 ```bash
 git clone https://github.com/hoaitan/agentfleet
 cd agentfleet
 go build -o agentfleet ./examples/file-manager/
-go build -o attach ./examples/attach/
 ```
 
 ## Library Quick Start
@@ -52,45 +51,13 @@ func main() {
 }
 ```
 
-## Example Binaries
+## Examples
 
-### Tasks from Markdown file
-
-Create `tasks.md`:
-
-```markdown
-## Task: Get today's date
-command: claude
-
-- delay: 2, inject: "What is today's date?"
-- delay: 8, inject: "/exit"
-```
-
-Run:
-
-```bash
-./agentfleet --source tasks.md
-```
-
-### Tasks from JSON/YAML
-
-```bash
-./agentfleet --source tasks.json
-./agentfleet --source tasks.yaml
-```
-
-### Tasks from HTTP
-
-```bash
-go run ./examples/taskserver/ &
-./agentfleet --source http://localhost:8080/tasks
-```
-
-### LLM-generated tasks
-
-```bash
-ANTHROPIC_API_KEY=sk-... go run ./examples/generate-manager/ --generate "Run 5 coding challenges"
-```
+| Example | Purpose |
+|---------|---------|
+| [http-manager](examples/http-manager/) | Load tasks from an HTTP endpoint |
+| [file-manager](examples/file-manager/) | Load tasks from JSON, YAML, or Markdown files |
+| [generate-manager](examples/generate-manager/) | Generate tasks via Claude API |
 
 ## Fleet Dashboard
 
@@ -122,22 +89,6 @@ ANTHROPIC_API_KEY=sk-... go run ./examples/generate-manager/ --generate "Run 5 c
 | `j` / `k` | Navigate between agents (scroll down/up)   |
 | `↵` Enter | Attach to selected agent's terminal        |
 | `q`       | Quit (stops all running agents)            |
-
-## Attaching to a Session
-
-Build the attach binary:
-
-```bash
-go build -o attach ./examples/attach/
-```
-
-Open a new terminal and attach to a running agent:
-
-```bash
-./attach task-1
-```
-
-This connects to the agent's Unix socket at `/tmp/agentfleet-task-1.sock`, giving you full interactive control. Your terminal stays in sync with the dashboard.
 
 ## Extending
 
@@ -227,11 +178,9 @@ func (s *DatabaseSource) Load() ([]agentfleet.Task, error) {
 | `agentfleet/tui` | Bubbletea TUI dashboard — `tui.Run(ctx, fleet, cfg, onAttach)` |
 | `agentfleet/source` | Task loaders: `FileSource`, `MarkdownSource`, `HTTPSource`, `GenerateSource`, `StepTask` |
 | `agentfleet/hook` | Byte processing: `Hook`, `Chain`, `FileLogger`, `Logger` |
+| `examples/http-manager` | Example: load tasks from HTTP endpoint; includes `taskserver/` sub-directory |
 | `examples/file-manager` | Example: load tasks from JSON/YAML/Markdown |
-| `examples/http-manager` | Example: load tasks from HTTP endpoint |
 | `examples/generate-manager` | Example: generate tasks with Claude API |
-| `examples/attach` | Terminal client: attach to a running agent's socket |
-| `examples/taskserver` | Example HTTP server serving task definitions |
 
 ## License
 
