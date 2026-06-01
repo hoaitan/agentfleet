@@ -10,7 +10,7 @@ Demonstrates loading tasks from a local file. Supports Markdown, JSON, and YAML 
 ## Build
 
 ```bash
-go build -o agentfleet ./examples/file-manager/
+go build -o agentfleet .
 ```
 
 ## Run
@@ -44,7 +44,7 @@ command: claude
 You can also use `go run` without building:
 
 ```bash
-go run ./examples/file-manager/ --source tasks.md
+go run . --source tasks.md
 ```
 
 ## Task File Formats

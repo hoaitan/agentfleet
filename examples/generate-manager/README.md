@@ -11,7 +11,7 @@ Demonstrates generating tasks from a natural-language goal using the Claude API.
 ## Run
 
 ```bash
-ANTHROPIC_API_KEY=sk-... go run ./examples/generate-manager/ --generate "Run 5 coding challenges"
+ANTHROPIC_API_KEY=sk-... go run . --generate "Run 5 coding challenges"
 ```
 
 The binary prints the generated task list and prompts `Launch these tasks? [y/N]` before starting the fleet.
