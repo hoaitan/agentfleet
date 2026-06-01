@@ -12,12 +12,12 @@ Use as a library:
 import agentfleet "github.com/hoaitan/agentfleet"
 ```
 
-Or build the main example binary from source:
+Or try an example directly from source:
 
 ```bash
 git clone https://github.com/hoaitan/agentfleet
-cd agentfleet
-go build -o agentfleet ./examples/file-manager/
+cd agentfleet/examples/file-manager
+go run . --source tasks.md
 ```
 
 ## Library Quick Start
@@ -55,9 +55,9 @@ func main() {
 
 | Example | Purpose |
 |---------|---------|
-| [http-manager](examples/http-manager/) | Load tasks from an HTTP endpoint |
-| [file-manager](examples/file-manager/) | Load tasks from JSON, YAML, or Markdown files |
-| [generate-manager](examples/generate-manager/) | Generate tasks via Claude API |
+| [http-manager](examples/http-manager/) | Load tasks from an HTTP endpoint and run agents |
+| [file-manager](examples/file-manager/) | Load tasks from JSON, YAML, or Markdown and run agents |
+| [generate-manager](examples/generate-manager/) | Generate tasks via Claude API and run agents |
 
 ## Fleet Dashboard
 

@@ -12,13 +12,13 @@ Demonstrates loading tasks from an HTTP endpoint. The bundled `taskserver/` sub-
 **Terminal 1** — start the task server:
 
 ```bash
-go run ./examples/http-manager/taskserver/
+go run ./taskserver/
 ```
 
 **Terminal 2** — run the fleet:
 
 ```bash
-go run ./examples/http-manager/ --source http://localhost:8080/tasks
+go run . --source http://localhost:8080/tasks
 ```
 
 ## Customize
