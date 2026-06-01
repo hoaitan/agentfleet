@@ -1,17 +1,17 @@
-# golangci-lint configuration for agentfleet (v2 schema).
-# https://golangci-lint.run/usage/configuration/
+# golangci-lint configuration for agentfleet (v1 schema).
+# CI pins golangci-lint v1.x via golangci-lint-action@v6.
 #
-# golangci-lint-action@v6 installs golangci-lint v2, which uses this schema.
-# We run the standard linter set (govet, ineffassign, staticcheck, unused)
-# minus errcheck for now: the codebase intentionally ignores several errors
-# (sockets, best-effort cleanup) that are not yet annotated with //nolint.
-# Re-enable errcheck — and add gosec/revive — after an annotation cleanup pass.
-version: "2"
-
+# We run a focused, high-signal set. errcheck/gosec/revive are intentionally
+# left off for now: the codebase ignores several errors (sockets, best-effort
+# cleanup) that aren't yet //nolint-annotated. Enable them after a cleanup pass.
 run:
+  timeout: 5m
   modules-download-mode: vendor
 
 linters:
-  default: standard
-  disable:
-    - errcheck
+  disable-all: true
+  enable:
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused

@@ -16,8 +16,8 @@ type BasicTask struct {
 	Cmd      string `json:"command" yaml:"command"`
 }
 
-func (t *BasicTask) ID() string { return t.TaskID }
-func (t *BasicTask) Name() string { return t.TaskName }
+func (t *BasicTask) ID() string      { return t.TaskID }
+func (t *BasicTask) Name() string    { return t.TaskName }
 func (t *BasicTask) Command() string { return t.Cmd }
 
 // CommandFields splits Task.Command() into argv for NewPtyAgent.

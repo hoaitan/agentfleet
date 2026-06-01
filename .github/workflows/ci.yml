@@ -75,7 +75,9 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          # Pin a golangci-lint v1 release: action@v6 is built for v1's CLI.
+          # (Upgrading to v2 requires golangci-lint-action@v7+ and a v2 config.)
+          version: v1.64.8
 
   vuln:
     name: govulncheck
