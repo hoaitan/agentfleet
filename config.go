@@ -24,6 +24,7 @@ type FleetConfig struct {
 
 // TUIConfig controls the Bubbletea dashboard appearance.
 type TUIConfig struct {
+	Title        func() string // header title func; nil = "◈ agentfleet"
 	Columns      int           // grid columns               — default: 3
 	PreviewLines int           // output lines shown in card — default: 3
 	CardWidth    int           // card width in chars        — default: 64

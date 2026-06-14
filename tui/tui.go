@@ -217,7 +217,11 @@ func renderHeader(m model) string {
 	if failed > 0 {
 		summary += fmt.Sprintf(" · %d failed", failed)
 	}
-	return styleTitle.Render("◈ agentfleet") + "  " + styleSummary.Render(summary)
+	title := styleTitle.Render("◈ agentfleet")
+	if m.cfg.Title != nil {
+		title = m.cfg.Title()
+	}
+	return title + "  " + styleSummary.Render(summary)
 }
 
 func renderListView(m model) string {
