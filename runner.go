@@ -256,6 +256,9 @@ func (r *Runner) StdinWriter() io.Writer {
 // Stop signals the underlying agent to terminate.
 func (r *Runner) Stop() error { return r.ag.Stop() }
 
+// Resize resizes the underlying PTY agent.
+func (r *Runner) Resize(rows, cols int) error { return r.ag.Resize(rows, cols) }
+
 func (r *Runner) StartedAt() time.Time {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

@@ -94,3 +94,16 @@ func TestRunnerStartIdempotent(t *testing.T) {
 	ag.Stop()
 	<-r.Done()
 }
+
+func TestRunnerResize(t *testing.T) {
+	ag := agentfleet.NewMockAgent()
+	task := &agentfleet.BasicTask{TaskID: "resize-t", TaskName: "resize", Cmd: "echo"}
+	r := agentfleet.NewRunner(task, ag, testCfg(), agentfleet.AgentConfig{})
+	r.Start()
+
+	err := r.Resize(40, 100)
+	assert.NoError(t, err)
+
+	ag.Stop()
+	<-r.Done()
+}
