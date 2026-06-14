@@ -15,23 +15,48 @@ import (
 	"github.com/hoaitan/agentfleet/internal/proxy"
 )
 
-// switchWriter is an io.Writer whose target can be swapped at runtime.
-type switchWriter struct {
-	mu sync.RWMutex
-	w  io.Writer
+// fanoutWriter writes to a primary writer (set via SetOutput) plus any number
+// of secondary writers (socket attach clients). Secondary writers are best-effort;
+// errors are silently ignored so a slow or disconnected client never blocks PTY output.
+type fanoutWriter struct {
+	mu        sync.RWMutex
+	primary   io.Writer
+	secondary []io.Writer
 }
 
-func (s *switchWriter) Write(p []byte) (int, error) {
-	s.mu.RLock()
-	w := s.w
-	s.mu.RUnlock()
-	return w.Write(p)
+func (f *fanoutWriter) Write(p []byte) (int, error) {
+	f.mu.RLock()
+	primary := f.primary
+	secondary := f.secondary
+	f.mu.RUnlock()
+	n, err := primary.Write(p)
+	for _, w := range secondary {
+		w.Write(p) //nolint:errcheck
+	}
+	return n, err
 }
 
-func (s *switchWriter) set(w io.Writer) {
-	s.mu.Lock()
-	s.w = w
-	s.mu.Unlock()
+func (f *fanoutWriter) setPrimary(w io.Writer) {
+	f.mu.Lock()
+	f.primary = w
+	f.mu.Unlock()
+}
+
+func (f *fanoutWriter) addSecondary(w io.Writer) {
+	f.mu.Lock()
+	f.secondary = append(f.secondary, w)
+	f.mu.Unlock()
+}
+
+func (f *fanoutWriter) removeSecondary(w io.Writer) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, sw := range f.secondary {
+		if sw == w {
+			f.secondary = append(f.secondary[:i], f.secondary[i+1:]...)
+			return
+		}
+	}
 }
 
 // ringBuffer stores the last max lines of output.
@@ -109,7 +134,7 @@ type Runner struct {
 	startedAt  time.Time
 	finishedAt time.Time
 	ag         Agent
-	sw         *switchWriter
+	fw         *fanoutWriter
 	ring       *ringBuffer
 	done       chan struct{}
 	prx        *proxy.Proxy
@@ -127,7 +152,7 @@ func NewRunner(task Task, ag Agent, cfg FleetConfig, agentCfg AgentConfig) *Runn
 		cfg:      cfg,
 		agentCfg: agentCfg,
 		ag:       ag,
-		sw:       &switchWriter{w: io.Discard},
+		fw:       &fanoutWriter{primary: io.Discard},
 		ring:     newRingBuffer(rbSize),
 		done:     make(chan struct{}),
 	}
@@ -154,7 +179,7 @@ func (r *Runner) Start() {
 		}
 
 		ri := &ringHook{buf: r.ring}
-		r.prx = proxy.New(r.ag, pr, r.sw, r.agentCfg.PTYRows, r.agentCfg.PTYCols, hook.Chain{}, hook.Chain{tee, ri})
+		r.prx = proxy.New(r.ag, pr, r.fw, r.agentCfg.PTYRows, r.agentCfg.PTYCols, hook.Chain{}, hook.Chain{tee, ri})
 		r.setStatus(StatusRunning)
 
 		if r.cfg.SocketDir != "" {
@@ -189,19 +214,8 @@ func (r *Runner) startSocketServer() {
 		return
 	}
 
-	var (
-		connected  atomic.Bool
-		activeMu   sync.Mutex
-		activeConn net.Conn
-	)
-
 	go func() {
 		<-r.done
-		activeMu.Lock()
-		if activeConn != nil {
-			activeConn.Close()
-		}
-		activeMu.Unlock()
 		ln.Close()
 		os.Remove(path)
 	}()
@@ -212,26 +226,11 @@ func (r *Runner) startSocketServer() {
 			if err != nil {
 				return
 			}
-			if !connected.CompareAndSwap(false, true) {
-				conn.Write([]byte("already attached\n")) //nolint:errcheck
-				conn.Close()
-				continue
-			}
-			activeMu.Lock()
-			activeConn = conn
-			activeMu.Unlock()
-
 			go func() {
-				defer func() {
-					activeMu.Lock()
-					activeConn = nil
-					activeMu.Unlock()
-					r.SetOutput(io.Discard)
-					connected.Store(false)
-					conn.Close()
-				}()
-				r.SetOutput(conn)
+				r.fw.addSecondary(conn)
 				io.Copy(r.StdinWriter(), conn) //nolint:errcheck
+				r.fw.removeSecondary(conn)
+				conn.Close()
 			}()
 		}
 	}()
@@ -244,7 +243,7 @@ func (r *Runner) Task() Task            { return r.task }
 func (r *Runner) setStatus(s Status)    { r.status.Store(int32(s)) }
 
 // SetOutput redirects agent output to w.
-func (r *Runner) SetOutput(w io.Writer) { r.sw.set(w) }
+func (r *Runner) SetOutput(w io.Writer) { r.fw.setPrimary(w) }
 
 // StdinWriter returns a writer whose bytes are forwarded to the agent's stdin.
 func (r *Runner) StdinWriter() io.Writer {
