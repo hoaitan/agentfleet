@@ -31,10 +31,11 @@ type TUIConfig struct {
 	AutoOpen     bool          // auto-open a tab for each task when it starts — default: true
 }
 
-// AgentConfig controls PTY dimensions.
+// AgentConfig controls PTY dimensions and environment.
 type AgentConfig struct {
-	PTYRows int // default: 24
-	PTYCols int // default: 220
+	PTYRows int       // default: 24
+	PTYCols int       // default: 220
+	Env     []string  // extra env vars (KEY=VALUE); appended to os.Environ() for child process only
 }
 
 // DefaultConfig returns sensible production defaults.
