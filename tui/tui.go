@@ -98,39 +98,46 @@ func Run(ctx context.Context, fleet *agentfleet.Fleet, cfg agentfleet.TUIConfig,
 
 func defaultOnAttach(taskID string) {
 	attachBin, _ := filepath.Abs("./attach")
-	openInTerminal(attachBin, taskID)
+	OpenInTerminal(attachBin, taskID)
 }
 
-func openInTerminal(attachBin, taskID string) {
+// OpenInTerminal opens a new terminal tab/window running the given command.
+// Each element of cmd is a separate argument (e.g. OpenInTerminal("retask", "sandbox", "attach", id)).
+func OpenInTerminal(cmd ...string) {
+	if len(cmd) == 0 {
+		return
+	}
+	cmdStr := strings.Join(cmd, " ")
 	if os.Getenv("TMUX") != "" {
-		exec.Command("tmux", "new-window", attachBin, taskID).Start() //nolint:errcheck
+		exec.Command("tmux", append([]string{"new-window"}, cmd...)...).Start() //nolint:errcheck
 		return
 	}
 	switch os.Getenv("TERM_PROGRAM") {
 	case "iTerm.app":
-		script := fmt.Sprintf("tell application \"iTerm2\"\ntell current window\ncreate tab with default profile command \"%s %s\"\nend tell\nend tell", attachBin, taskID)
+		script := fmt.Sprintf("tell application \"iTerm2\"\ntell current window\ncreate tab with default profile command \"%s\"\nend tell\nend tell", cmdStr)
 		exec.Command("osascript", "-e", script).Start() //nolint:errcheck
 	case "Apple_Terminal":
-		script := fmt.Sprintf("tell application \"Terminal\"\ndo script \"%s %s\"\nactivate\nend tell", attachBin, taskID)
+		script := fmt.Sprintf("tell application \"Terminal\"\ndo script \"%s\"\nactivate\nend tell", cmdStr)
 		exec.Command("osascript", "-e", script).Start() //nolint:errcheck
 	case "ghostty":
-		exec.Command("ghostty", "-e", attachBin, taskID).Start() //nolint:errcheck
+		exec.Command("ghostty", append([]string{"-e"}, cmd...)...).Start() //nolint:errcheck
 	default:
 		if os.Getenv("TERM") == "xterm-kitty" {
-			exec.Command("kitty", attachBin, taskID).Start() //nolint:errcheck
+			exec.Command("kitty", cmd...).Start() //nolint:errcheck
 			return
 		}
-		openLinuxTerminal(attachBin, taskID)
+		openLinuxTerminal(cmd...)
 	}
 }
 
-func openLinuxTerminal(attachBin, taskID string) {
+func openLinuxTerminal(cmd ...string) {
+	cmdStr := strings.Join(cmd, " ")
 	candidates := [][]string{
-		{"gnome-terminal", "--", attachBin, taskID},
-		{"xterm", "-e", attachBin, taskID},
-		{"alacritty", "-e", attachBin, taskID},
-		{"konsole", "-e", attachBin, taskID},
-		{"xfce4-terminal", "-e", attachBin + " " + taskID},
+		append([]string{"gnome-terminal", "--"}, cmd...),
+		append([]string{"xterm", "-e"}, cmd...),
+		append([]string{"alacritty", "-e"}, cmd...),
+		append([]string{"konsole", "-e"}, cmd...),
+		{"xfce4-terminal", "-e", cmdStr},
 	}
 	for _, args := range candidates {
 		if _, err := exec.LookPath(args[0]); err == nil {
