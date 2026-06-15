@@ -31,6 +31,11 @@ func TestIsChromeLine(t *testing.T) {
 		{"Step 3 of 5 complete", false},
 		{"─ some label ─", false}, // not a full-width divider (contains non-─ chars)
 		{"(cost 0.5 tokens saved)", false}, // doesn't end with "tokens)"
+		{"Galloping...", true},
+		{"Analyzing…", true},
+		{"Loading...", true},
+		{"Analyzing codebase...", false}, // multi-word
+		{"running...", false},            // lowercase first letter
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {

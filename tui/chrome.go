@@ -1,6 +1,9 @@
 package tui
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+)
 
 // filterAgentChrome removes AI agent TUI shell artifacts from raw PTY output lines.
 // Filters full-width dividers, input prompts, permission banners, and processing
@@ -61,5 +64,31 @@ func isChromeLine(s string) bool {
 		strings.Contains(s, "⏵⏵") {
 		return true
 	}
+	// Bare thinking verb: single capitalized word ending with "..." or "…"
+	// e.g. "Galloping...", "Analyzing…", "Loading..."
+	if isThinkingVerb(s) {
+		return true
+	}
 	return false
+}
+
+// isThinkingVerb returns true for lines like "Galloping..." — a single
+// CamelCase word followed by an ASCII or Unicode ellipsis. These are emitted
+// by agent shells as progress indicators and add no value in a preview.
+func isThinkingVerb(s string) bool {
+	suffix := ""
+	switch {
+	case strings.HasSuffix(s, "..."):
+		suffix = "..."
+	case strings.HasSuffix(s, "…"):
+		suffix = "…"
+	default:
+		return false
+	}
+	word := strings.TrimSuffix(s, suffix)
+	if len(word) == 0 || strings.ContainsAny(word, " \t") {
+		return false // multi-word line — probably real content
+	}
+	runes := []rune(word)
+	return unicode.IsUpper(runes[0])
 }

@@ -229,12 +229,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// logHeight returns the actual height of the log panel (dynamic, capped at termH/3).
+// Using actual line count avoids the large blank area that appears when the log is sparse.
+func (m model) logHeight() int {
+	if m.cfg.Log == nil {
+		return 0
+	}
+	max := m.termH / 3
+	if max < 2 {
+		max = 2
+	}
+	h := len(m.cfg.Log.Lines()) + 1 // +1 for the divider line
+	if h < 1 {
+		h = 1
+	}
+	if h > max {
+		h = max
+	}
+	return h
+}
+
 // mainHeight returns the usable line budget for the task list area.
 func (m model) mainHeight() int {
 	h := m.termH - 3 // header + blank separator line + footer
-	if m.cfg.Log != nil {
-		h -= m.termH / 3
-	}
+	h -= m.logHeight()
 	if h < 1 {
 		h = 1
 	}
@@ -447,15 +465,12 @@ func shortID(id string) string {
 
 // renderLog renders the bottom log panel.
 func renderLog(m model) string {
-	logH := m.termH / 3
-	if logH < 2 {
-		logH = 2
-	}
+	logH := m.logHeight()
 	w := m.termW
 
 	allLines := m.cfg.Log.Lines()
 	total := len(allLines)
-	contentH := logH - 1
+	contentH := logH - 1 // one line reserved for the divider
 	start := total - contentH
 	if start < 0 {
 		start = 0
@@ -466,10 +481,7 @@ func renderLog(m model) string {
 	for _, l := range allLines[start:] {
 		rows = append(rows, styleLog.Width(w).Render(truncateVisual(l, w)))
 	}
-	for len(rows) < logH {
-		rows = append(rows, strings.Repeat(" ", w))
-	}
-	return strings.Join(rows[:logH], "\n")
+	return strings.Join(rows, "\n")
 }
 
 func truncateVisual(s string, maxW int) string {
