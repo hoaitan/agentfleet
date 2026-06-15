@@ -250,7 +250,12 @@ func (m model) View() string {
 	header := renderHeader(m, active, done)
 	left := renderLeft(m, active, done, mainH, m.termW)
 
-	footer := styleFooter.Render("[↑↓ j/k] navigate  [enter] attach  [q] quit")
+	footerHints := "[↑↓ j/k] navigate"
+	if m.cursor < len(active) && active[m.cursor].Status() == agentfleet.StatusRunning {
+		footerHints += "  [enter] attach"
+	}
+	footerHints += "  [q] quit"
+	footer := styleFooter.Render(footerHints)
 
 	parts := []string{header, left}
 	if m.cfg.Log != nil {
@@ -274,7 +279,17 @@ func renderHeader(m model, active, done []*agentfleet.Runner) string {
 	if m.cfg.Title != nil {
 		title = m.cfg.Title()
 	}
-	return title + "  " + styleSummary.Render(summary)
+	left := title + "  " + styleSummary.Render(summary)
+
+	if m.cfg.TitleRight == nil {
+		return left
+	}
+	right := m.cfg.TitleRight()
+	gap := m.termW - lipgloss.Width(left) - lipgloss.Width(right)
+	if gap < 1 {
+		gap = 1
+	}
+	return left + strings.Repeat(" ", gap) + right
 }
 
 func statusBadge(s agentfleet.Status) string {
@@ -314,17 +329,39 @@ func renderLeft(m model, active, done []*agentfleet.Runner, mainH, w int) string
 	if offset > len(rows) {
 		offset = len(rows)
 	}
-	visible := rows[offset:]
-	if len(visible) > mainH {
-		visible = visible[:mainH]
-	}
+
+	const previewLines = 3
+	const previewPrefix = "  │ "
+	const previewPrefixW = 4 // visual width of previewPrefix
 
 	lines := make([]string, 0, mainH)
-	for _, row := range visible {
+	for _, row := range rows[offset:] {
+		if len(lines) >= mainH {
+			break
+		}
 		if row.divider {
 			lines = append(lines, styleDivider.Width(w).Render(strings.Repeat("─", w)))
-		} else {
-			lines = append(lines, renderRow(row.runner, row.idx == m.cursor, w))
+			continue
+		}
+		selected := row.idx == m.cursor
+		lines = append(lines, renderRow(row.runner, selected, w))
+		if selected {
+			filtered := filterAgentChrome(row.runner.Lines())
+			start := len(filtered) - previewLines
+			if start < 0 {
+				start = 0
+			}
+			for _, ol := range filtered[start:] {
+				if len(lines) >= mainH {
+					break
+				}
+				content := truncateVisual(stripANSI(ol), w-previewPrefixW)
+				pad := w - previewPrefixW - lipgloss.Width(content)
+				if pad < 0 {
+					pad = 0
+				}
+				lines = append(lines, styleDivider.Render(previewPrefix)+styleLog.Render(content)+strings.Repeat(" ", pad))
+			}
 		}
 	}
 	for len(lines) < mainH {
