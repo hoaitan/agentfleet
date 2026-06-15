@@ -43,20 +43,13 @@ var (
 	styleSelID   = lipgloss.NewStyle().Foreground(lipgloss.Color("#c084fc"))
 	styleOutput  = lipgloss.NewStyle().Foreground(lipgloss.Color("#d1d5db"))
 	styleFooter  = lipgloss.NewStyle().Foreground(lipgloss.Color("#4b5563"))
+	styleLog     = lipgloss.NewStyle().Foreground(lipgloss.Color("#4b5563"))
 	styleRunning = lipgloss.NewStyle().Foreground(lipgloss.Color("#4ade80"))
 	styleDone    = lipgloss.NewStyle().Foreground(lipgloss.Color("#34d399"))
 	styleFailed  = lipgloss.NewStyle().Foreground(lipgloss.Color("#f87171"))
 	stylePending = lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280"))
-
-	cardSelStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#7c3aed")).
-			Background(lipgloss.Color("#1e1730"))
-
-	cardOtherStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#374151")).
-			Background(lipgloss.Color("#1a1826"))
+	styleSel     = lipgloss.NewStyle().Background(lipgloss.Color("#1e1730"))
+	styleDivider = lipgloss.NewStyle().Foreground(lipgloss.Color("#374151"))
 )
 
 type tickMsg struct{}
@@ -81,7 +74,10 @@ type model struct {
 	cursor     int
 	termW      int
 	termH      int
-	openedTabs map[string]bool // tracks runners that have already had a tab auto-opened
+	openedTabs map[string]bool
+
+	listOffset    int // first visible visual row in task list
+	outScrollBack int // 0 = snapped to bottom; N = scrolled N lines up from bottom
 }
 
 // Run starts the Bubbletea TUI and blocks until the user quits or ctx is cancelled.
@@ -155,6 +151,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case ctxDoneMsg:
 		return m, tea.Quit
+
 	case tickMsg:
 		if m.cfg.AutoOpen {
 			for _, r := range m.fleet.Runners() {
@@ -165,81 +162,141 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+		// clamp cursor if tasks disappeared
+		active, done := orderedRunners(m.fleet.Runners(), m.cfg.MaxDoneTasks)
+		if total := len(active) + len(done); total > 0 && m.cursor >= total {
+			m.cursor = total - 1
+		}
 		return m, tickCmd(m.cfg.RefreshRate)
+
 	case tea.WindowSizeMsg:
 		m.termW = msg.Width
 		m.termH = msg.Height
 		return m, nil
+
 	case tea.KeyMsg:
-		runners := m.fleet.Runners()
+		active, done := orderedRunners(m.fleet.Runners(), m.cfg.MaxDoneTasks)
+		all := append(active, done...)
+		total := len(all)
+		prevCursor := m.cursor
+
 		switch msg.Type {
 		case tea.KeyUp:
 			if m.cursor > 0 {
 				m.cursor--
 			}
 		case tea.KeyDown:
-			if m.cursor < len(runners)-1 {
+			if m.cursor < total-1 {
 				m.cursor++
 			}
 		case tea.KeyEnter:
-			if len(runners) > 0 && runners[m.cursor].Status() == agentfleet.StatusRunning {
-				m.onAttach(runners[m.cursor].Task().ID())
+			if m.cursor < len(all) && all[m.cursor].Status() == agentfleet.StatusRunning {
+				m.onAttach(all[m.cursor].Task().ID())
 			}
 			return m, nil
 		case tea.KeyCtrlC:
 			return m, tea.Quit
 		}
+
 		switch msg.String() {
 		case "j":
-			if m.cursor < len(m.fleet.Runners())-1 {
+			if m.cursor < total-1 {
 				m.cursor++
 			}
 		case "k":
 			if m.cursor > 0 {
 				m.cursor--
 			}
+		case "u":
+			m.outScrollBack++
+		case "d":
+			if m.outScrollBack > 0 {
+				m.outScrollBack--
+			}
 		case "q":
 			return m, tea.Quit
+		}
+
+		// reset right panel scroll on task change
+		if m.cursor != prevCursor {
+			m.outScrollBack = 0
+		}
+
+		// keep cursor visible in the list
+		mainH := m.mainHeight()
+		visRow := m.cursor
+		if m.cursor >= len(active) && len(active) > 0 && len(done) > 0 {
+			visRow++ // account for divider row
+		}
+		if visRow < m.listOffset {
+			m.listOffset = visRow
+		}
+		if visRow >= m.listOffset+mainH {
+			m.listOffset = visRow - mainH + 1
 		}
 	}
 	return m, nil
 }
 
-func (m model) View() string { return renderListView(m) }
+// mainHeight returns usable height for the left/right panels.
+func (m model) mainHeight() int {
+	h := m.termH - 2 // subtract header + footer
+	if m.cfg.Log != nil {
+		h -= m.termH / 3
+	}
+	if h < 1 {
+		h = 1
+	}
+	return h
+}
 
-func renderHeader(m model) string {
-	runners := m.fleet.Runners()
-	var running, done, failed int
-	for _, r := range runners {
-		switch r.Status() {
-		case agentfleet.StatusRunning:
+func (m model) View() string {
+	if m.termW == 0 || m.termH == 0 {
+		return ""
+	}
+
+	active, done := orderedRunners(m.fleet.Runners(), m.cfg.MaxDoneTasks)
+	all := append(active, done...)
+
+	mainH := m.mainHeight()
+	leftW := m.termW / 2
+	rightW := m.termW - leftW
+
+	var selRunner *agentfleet.Runner
+	if m.cursor < len(all) {
+		selRunner = all[m.cursor]
+	}
+
+	header := renderHeader(m, active, done)
+	left := renderLeft(m, active, done, mainH, leftW)
+	right := renderRight(m, selRunner, mainH, rightW)
+	main := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+
+	footer := styleFooter.Render("[↑↓ j/k] navigate  [u/d] scroll output  [enter] attach  [q] quit")
+
+	parts := []string{header, main}
+	if m.cfg.Log != nil {
+		parts = append(parts, renderLog(m))
+	}
+	parts = append(parts, footer)
+	return strings.Join(parts, "\n")
+}
+
+func renderHeader(m model, active, done []*agentfleet.Runner) string {
+	var running int
+	for _, r := range active {
+		if r.Status() == agentfleet.StatusRunning {
 			running++
-		case agentfleet.StatusDone:
-			done++
-		case agentfleet.StatusFailed:
-			failed++
 		}
 	}
-	summary := fmt.Sprintf("%d tasks · %d running · %d done", len(runners), running, done)
-	if failed > 0 {
-		summary += fmt.Sprintf(" · %d failed", failed)
-	}
+	total := len(active) + len(done)
+	summary := fmt.Sprintf("%d tasks · %d running · %d done", total, running, len(done))
+
 	title := styleTitle.Render("◈ agentfleet")
 	if m.cfg.Title != nil {
 		title = m.cfg.Title()
 	}
 	return title + "  " + styleSummary.Render(summary)
-}
-
-func renderListView(m model) string {
-	runners := m.fleet.Runners()
-	var b strings.Builder
-	b.WriteString(renderHeader(m) + "\n\n")
-	for i, r := range runners {
-		b.WriteString(renderCard(r, m.cfg, i == m.cursor) + "\n")
-	}
-	b.WriteString("\n" + styleFooter.Render("[↑↓ j/k] navigate  [enter] open tab  [q] quit"))
-	return b.String()
 }
 
 func statusBadge(s agentfleet.Status) string {
@@ -256,7 +313,50 @@ func statusBadge(s agentfleet.Status) string {
 	}
 }
 
-func renderCard(r *agentfleet.Runner, cfg agentfleet.TUIConfig, selected bool) string {
+// renderLeft renders the task list left panel.
+func renderLeft(m model, active, done []*agentfleet.Runner, mainH, w int) string {
+	type row struct {
+		runner  *agentfleet.Runner
+		idx     int // index into active+done
+		divider bool
+	}
+
+	var rows []row
+	for i, r := range active {
+		rows = append(rows, row{runner: r, idx: i})
+	}
+	if len(active) > 0 && len(done) > 0 {
+		rows = append(rows, row{divider: true})
+	}
+	for i, r := range done {
+		rows = append(rows, row{runner: r, idx: len(active) + i})
+	}
+
+	offset := m.listOffset
+	if offset > len(rows) {
+		offset = len(rows)
+	}
+	visible := rows[offset:]
+	if len(visible) > mainH {
+		visible = visible[:mainH]
+	}
+
+	lines := make([]string, 0, mainH)
+	for _, row := range visible {
+		if row.divider {
+			lines = append(lines, styleDivider.Width(w).Render(strings.Repeat("─", w)))
+		} else {
+			lines = append(lines, renderRow(row.runner, row.idx == m.cursor, w))
+		}
+	}
+	for len(lines) < mainH {
+		lines = append(lines, strings.Repeat(" ", w))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// renderRow renders a single task row in the left panel.
+func renderRow(r *agentfleet.Runner, selected bool, w int) string {
 	cursor := "  "
 	idStyle := styleMeta
 	if selected {
@@ -264,59 +364,101 @@ func renderCard(r *agentfleet.Runner, cfg agentfleet.TUIConfig, selected bool) s
 		idStyle = styleSelID
 	}
 
-	badge := statusBadge(r.Status())
 	task := r.Task()
+	badge := statusBadge(r.Status())
+
+	elapsed := ""
+	if r.Status() == agentfleet.StatusRunning {
+		d := time.Since(r.StartedAt()).Round(time.Second)
+		elapsed = fmt.Sprintf("%02d:%02d", int(d.Minutes()), int(d.Seconds())%60)
+	}
+	elapsedCol := styleMeta.Width(5).Render(elapsed)
+
+	idStr := idStyle.Render(task.ID())
 	cursorW := lipgloss.Width(cursor)
-	idW := lipgloss.Width(idStyle.Render(task.ID()))
+	idW := lipgloss.Width(idStr)
 	badgeW := lipgloss.Width(badge)
-	nameMaxW := cfg.CardWidth - cursorW - idW - 2 - badgeW - 1
-	if nameMaxW < 8 {
-		nameMaxW = 8
+	elapsedW := lipgloss.Width(elapsedCol)
+	nameMaxW := w - cursorW - idW - 2 - badgeW - 1 - elapsedW - 1
+	if nameMaxW < 4 {
+		nameMaxW = 4
 	}
 	name := truncateVisual(task.Name(), nameMaxW)
-	left := cursor + idStyle.Render(task.ID()) + "  " + name
-	gap := cfg.CardWidth - lipgloss.Width(left) - badgeW
+
+	left := cursor + idStr + "  " + name
+	right := badge + " " + elapsedCol
+	gap := w - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1
 	}
 
-	var lines []string
-	lines = append(lines, left+strings.Repeat(" ", gap)+badge)
-
+	rowStr := left + strings.Repeat(" ", gap) + right
 	if selected {
-		elapsed := elapsedStr(r.StartedAt(), r.FinishedAt())
-		lines = append(lines, styleMeta.Render("  "+elapsed))
-
-		allLines := r.Lines()
-		start := len(allLines) - cfg.PreviewLines
-		if start < 0 {
-			start = 0
-		}
-		preview := allLines[start:]
-		lines = append(lines, "")
-		for i := 0; i < cfg.PreviewLines; i++ {
-			if i < len(preview) {
-				text := truncateVisual(stripANSI(preview[i]), cfg.CardWidth-4)
-				lines = append(lines, styleOutput.Render("  "+text))
-			} else {
-				lines = append(lines, "")
-			}
-		}
-		return cardSelStyle.Width(cfg.CardWidth).Render(strings.Join(lines, "\n"))
+		return styleSel.Width(w).Render(rowStr)
 	}
-
-	return cardOtherStyle.Width(cfg.CardWidth).Render(strings.Join(lines, "\n"))
+	return lipgloss.NewStyle().Width(w).Render(rowStr)
 }
 
-func elapsedStr(start, end time.Time) string {
-	if start.IsZero() {
-		return ""
+// renderRight renders the output panel for the selected task.
+func renderRight(m model, r *agentfleet.Runner, mainH, w int) string {
+	var rawLines []string
+	if r != nil {
+		rawLines = r.Lines()
 	}
-	if end.IsZero() {
-		end = time.Now()
+
+	lines := make([]string, len(rawLines))
+	for i, l := range rawLines {
+		lines[i] = truncateVisual(stripANSI(l), w)
 	}
-	d := end.Sub(start).Round(time.Second)
-	return fmt.Sprintf("%02d:%02d elapsed", int(d.Minutes()), int(d.Seconds())%60)
+
+	total := len(lines)
+	start := total - mainH - m.outScrollBack
+	if start < 0 {
+		start = 0
+	}
+	end := start + mainH
+	if end > total {
+		end = total
+	}
+
+	visible := make([]string, mainH)
+	if total > 0 {
+		copy(visible, lines[start:end])
+	}
+
+	rowStyle := styleOutput.Width(w)
+	rendered := make([]string, mainH)
+	for i, l := range visible {
+		rendered[i] = rowStyle.Render(l)
+	}
+	return strings.Join(rendered, "\n")
+}
+
+// renderLog renders the bottom log panel.
+func renderLog(m model) string {
+	logH := m.termH / 3
+	if logH < 2 {
+		logH = 2
+	}
+	w := m.termW
+
+	allLines := m.cfg.Log.Lines()
+	total := len(allLines)
+	contentH := logH - 1
+	start := total - contentH
+	if start < 0 {
+		start = 0
+	}
+
+	divider := styleDivider.Width(w).Render(strings.Repeat("─", w))
+	rows := []string{divider}
+	for _, l := range allLines[start:] {
+		rows = append(rows, styleLog.Width(w).Render(truncateVisual(l, w)))
+	}
+	for len(rows) < logH {
+		rows = append(rows, strings.Repeat(" ", w))
+	}
+	return strings.Join(rows[:logH], "\n")
 }
 
 func truncateVisual(s string, maxW int) string {
