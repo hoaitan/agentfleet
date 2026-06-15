@@ -176,7 +176,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		active, done := orderedRunners(m.fleet.Runners(), m.cfg.MaxDoneTasks)
-		all := append(active, done...)
+		all := make([]*agentfleet.Runner, 0, len(active)+len(done))
+		all = append(all, active...)
+		all = append(all, done...)
 		total := len(all)
 		prevCursor := m.cursor
 
@@ -222,6 +224,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.outScrollBack = 0
 		}
 
+		// clamp outScrollBack so d-key is always immediately responsive
+		if m.cursor < len(all) {
+			lines := all[m.cursor].Lines()
+			if maxBack := len(lines) - m.mainHeight(); maxBack >= 0 {
+				if m.outScrollBack > maxBack {
+					m.outScrollBack = maxBack
+				}
+			} else {
+				m.outScrollBack = 0
+			}
+		}
+
 		// keep cursor visible in the list
 		mainH := m.mainHeight()
 		visRow := m.cursor
@@ -256,7 +270,9 @@ func (m model) View() string {
 	}
 
 	active, done := orderedRunners(m.fleet.Runners(), m.cfg.MaxDoneTasks)
-	all := append(active, done...)
+	all := make([]*agentfleet.Runner, 0, len(active)+len(done))
+	all = append(all, active...)
+	all = append(all, done...)
 
 	mainH := m.mainHeight()
 	leftW := m.termW / 2
