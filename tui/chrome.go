@@ -34,16 +34,24 @@ func isChromeLine(s string) bool {
 	if s == "" {
 		return false
 	}
-	// Full-width horizontal rules (─ U+2500, ━ U+2501)
+	// Full-width horizontal rules: em-dash (─ U+2500, ━ U+2501) or ASCII hyphens (---)
 	if strings.Trim(s, "─") == "" || strings.Trim(s, "━") == "" {
+		return true
+	}
+	if strings.Trim(s, "-") == "" && len(s) >= 3 {
 		return true
 	}
 	// Input prompt line
 	if s == "❯" || strings.HasPrefix(s, "❯ ") {
 		return true
 	}
-	// Processing / thinking indicator (e.g. "✻ Sautéed for 12s")
-	if strings.HasPrefix(s, "✻") {
+	// Processing / thinking indicators (various Unicode symbols used by agent shells)
+	if strings.HasPrefix(s, "✻") || strings.HasPrefix(s, "⭑") ||
+		strings.HasPrefix(s, "✦") || strings.HasPrefix(s, "⭐") {
+		return true
+	}
+	// Token/time counter: "(16s·+842tokens)" or "(2s · ↓1 tokens)"
+	if strings.HasPrefix(s, "(") && strings.HasSuffix(s, "tokens)") {
 		return true
 	}
 	// Permission banner / mode line

@@ -13,16 +13,24 @@ func TestIsChromeLine(t *testing.T) {
 	}{
 		{"────────────────────────────────────────────────────────────", true},
 		{"━━━━━━━━━━━━━━━━━━━━━━━━", true},
+		{"---", true},
+		{"----------", true},
 		{"❯", true},
 		{"❯ some text", true},
 		{"✻ Sautéed for 12s", true},
+		{"⭑Garnishing…(16s·+842tokens)", true},
+		{"✦ thinking", true},
+		{"(16s·+842tokens)", true},
+		{"(2s · ↓1 tokens)", true},
 		{"  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents", true},
 		{"bypass permissions", true},
 		{"", false},
+		{"--", false},            // too short to be a divider
 		{"Analyzing codebase structure...", false},
 		{"Writing unit tests for auth.go", false},
 		{"Step 3 of 5 complete", false},
 		{"─ some label ─", false}, // not a full-width divider (contains non-─ chars)
+		{"(cost 0.5 tokens saved)", false}, // doesn't end with "tokens)"
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {

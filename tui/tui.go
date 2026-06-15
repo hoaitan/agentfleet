@@ -47,7 +47,6 @@ var (
 	styleDone    = lipgloss.NewStyle().Foreground(lipgloss.Color("#34d399"))
 	styleFailed  = lipgloss.NewStyle().Foreground(lipgloss.Color("#f87171"))
 	stylePending = lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280"))
-	styleSel     = lipgloss.NewStyle().Background(lipgloss.Color("#1e1730"))
 	styleDivider = lipgloss.NewStyle().Foreground(lipgloss.Color("#374151"))
 )
 
@@ -210,25 +209,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 
-		// keep cursor visible in the list
+		// keep cursor visible — each card is ~3 visual rows
 		mainH := m.mainHeight()
+		visibleCards := mainH / 3
+		if visibleCards < 1 {
+			visibleCards = 1
+		}
 		visRow := m.cursor
 		if m.cursor >= len(active) && len(active) > 0 && len(done) > 0 {
-			visRow++ // account for divider row
+			visRow++ // account for section divider row
 		}
 		if visRow < m.listOffset {
 			m.listOffset = visRow
 		}
-		if visRow >= m.listOffset+mainH {
-			m.listOffset = visRow - mainH + 1
+		if visRow >= m.listOffset+visibleCards {
+			m.listOffset = visRow - visibleCards + 1
 		}
 	}
 	return m, nil
 }
 
-// mainHeight returns usable height for the left/right panels.
+// mainHeight returns the usable line budget for the task list area.
 func (m model) mainHeight() int {
-	h := m.termH - 2 // subtract header + footer
+	h := m.termH - 3 // header + blank separator line + footer
 	if m.cfg.Log != nil {
 		h -= m.termH / 3
 	}
@@ -257,12 +260,18 @@ func (m model) View() string {
 	footerHints += "  [q] quit"
 	footer := styleFooter.Render(footerHints)
 
-	parts := []string{header, taskList}
+	parts := []string{header, "", taskList} // blank line between header and task list
 	if m.cfg.Log != nil {
 		parts = append(parts, renderLog(m))
 	}
 	parts = append(parts, footer)
-	return strings.Join(parts, "\n")
+	output := strings.Join(parts, "\n")
+	// Pad to terminal height so Bubbletea's diff renderer fully overwrites stale lines
+	// from a previous frame (prevents bleed-through when the view shrinks between ticks).
+	if lineCount := strings.Count(output, "\n") + 1; m.termH > lineCount {
+		output += strings.Repeat("\n", m.termH-lineCount)
+	}
+	return output
 }
 
 func renderHeader(m model, active, done []*agentfleet.Runner) string {
@@ -306,11 +315,11 @@ func statusBadge(s agentfleet.Status) string {
 	}
 }
 
-// renderTaskList renders the full-width task list.
+// renderTaskList renders the full-width task list as cards.
 func renderTaskList(m model, active, done []*agentfleet.Runner, mainH, w int) string {
 	type row struct {
 		runner  *agentfleet.Runner
-		idx     int // index into active+done
+		idx     int
 		divider bool
 	}
 
@@ -330,9 +339,7 @@ func renderTaskList(m model, active, done []*agentfleet.Runner, mainH, w int) st
 		offset = len(rows)
 	}
 
-	const previewLines = 3
-	const previewPrefix = "  │ "
-	const previewPrefixW = 4 // visual width of previewPrefix
+	const previewN = 3
 
 	lines := make([]string, 0, mainH)
 	for _, row := range rows[offset:] {
@@ -340,28 +347,33 @@ func renderTaskList(m model, active, done []*agentfleet.Runner, mainH, w int) st
 			break
 		}
 		if row.divider {
-			lines = append(lines, styleDivider.Width(w).Render(strings.Repeat("─", w)))
+			label := " done "
+			dashW := w - len([]rune(label)) - 2
+			if dashW < 0 {
+				dashW = 0
+			}
+			lines = append(lines, styleDivider.Render("─"+label+strings.Repeat("─", dashW)+"─"))
 			continue
 		}
+
 		selected := row.idx == m.cursor
-		lines = append(lines, renderRow(row.runner, selected, w))
+		var preview []string
 		if selected {
 			filtered := filterAgentChrome(row.runner.Lines())
-			start := len(filtered) - previewLines
+			start := len(filtered) - previewN
 			if start < 0 {
 				start = 0
 			}
-			for _, ol := range filtered[start:] {
-				if len(lines) >= mainH {
-					break
-				}
-				content := truncateVisual(stripANSI(ol), w-previewPrefixW)
-				pad := w - previewPrefixW - lipgloss.Width(content)
-				if pad < 0 {
-					pad = 0
-				}
-				lines = append(lines, styleDivider.Render(previewPrefix)+styleLog.Render(content)+strings.Repeat(" ", pad))
+			for _, l := range filtered[start:] {
+				preview = append(preview, stripANSI(l))
 			}
+		}
+
+		for _, cl := range strings.Split(renderCard(row.runner, selected, w, preview), "\n") {
+			if len(lines) >= mainH {
+				break
+			}
+			lines = append(lines, cl)
 		}
 	}
 	for len(lines) < mainH {
@@ -370,8 +382,20 @@ func renderTaskList(m model, active, done []*agentfleet.Runner, mainH, w int) st
 	return strings.Join(lines, "\n")
 }
 
-// renderRow renders a single task row in the left panel.
-func renderRow(r *agentfleet.Runner, selected bool, w int) string {
+// renderCard renders a task as a boxed card.
+// Non-selected: 3 lines (top border + content + bottom border).
+// Selected: 3 + len(preview) lines.
+func renderCard(r *agentfleet.Runner, selected bool, w int, preview []string) string {
+	innerW := w - 2 // RoundedBorder uses 1 char on each side
+
+	badge := statusBadge(r.Status())
+	elapsed := ""
+	if r.Status() == agentfleet.StatusRunning {
+		d := time.Since(r.StartedAt()).Round(time.Second)
+		elapsed = fmt.Sprintf("%02d:%02d", int(d.Minutes()), int(d.Seconds())%60)
+	}
+
+	task := r.Task()
 	cursor := "  "
 	idStyle := styleMeta
 	if selected {
@@ -379,39 +403,46 @@ func renderRow(r *agentfleet.Runner, selected bool, w int) string {
 		idStyle = styleSelID
 	}
 
-	task := r.Task()
-	badge := statusBadge(r.Status())
+	idStr := idStyle.Render(shortID(task.ID()))
+	elapsedStr := styleMeta.Width(5).Render(elapsed)
+	rightStr := idStr + "  " + elapsedStr
+	leftPrefix := cursor + badge + "  "
 
-	elapsed := ""
-	if r.Status() == agentfleet.StatusRunning {
-		d := time.Since(r.StartedAt()).Round(time.Second)
-		elapsed = fmt.Sprintf("%02d:%02d", int(d.Minutes()), int(d.Seconds())%60)
-	}
-	elapsedCol := styleMeta.Width(5).Render(elapsed)
-
-	idStr := idStyle.Render(task.ID())
-	cursorW := lipgloss.Width(cursor)
-	idW := lipgloss.Width(idStr)
-	badgeW := lipgloss.Width(badge)
-	elapsedW := lipgloss.Width(elapsedCol)
-	nameMaxW := w - cursorW - idW - 2 - badgeW - 1 - elapsedW - 1
+	nameMaxW := innerW - lipgloss.Width(leftPrefix) - lipgloss.Width(rightStr) - 1
 	if nameMaxW < 4 {
 		nameMaxW = 4
 	}
 	name := truncateVisual(task.Name(), nameMaxW)
-
-	left := cursor + idStr + "  " + name
-	right := badge + " " + elapsedCol
-	gap := w - lipgloss.Width(left) - lipgloss.Width(right)
+	leftStr := leftPrefix + name
+	gap := innerW - lipgloss.Width(leftStr) - lipgloss.Width(rightStr)
 	if gap < 1 {
 		gap = 1
 	}
 
-	rowStr := left + strings.Repeat(" ", gap) + right
-	if selected {
-		return styleSel.Width(w).Render(rowStr)
+	var sb strings.Builder
+	sb.WriteString(leftStr + strings.Repeat(" ", gap) + rightStr)
+	for _, l := range preview {
+		sb.WriteString("\n  ")
+		sb.WriteString(styleLog.Render(truncateVisual(l, innerW-2)))
 	}
-	return lipgloss.NewStyle().Width(w).Render(rowStr)
+
+	borderColor := lipgloss.Color("#374151")
+	if selected {
+		borderColor = lipgloss.Color("#7c3aed")
+	}
+
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor).
+		Width(innerW).
+		Render(sb.String())
+}
+
+func shortID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
 }
 
 // renderLog renders the bottom log panel.
