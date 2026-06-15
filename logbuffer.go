@@ -25,9 +25,14 @@ func NewLogBuffer(maxLines int) *LogBuffer {
 // Write implements io.Writer. Lines are split on '\n'; incomplete lines are
 // buffered until the next Write that completes them.
 func (b *LogBuffer) Write(p []byte) (int, error) {
+	const maxAccBytes = 64 * 1024
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.acc = append(b.acc, p...)
+	// Cap unbounded growth if acc exceeds max without encountering newlines
+	if len(b.acc) > maxAccBytes {
+		b.acc = b.acc[len(b.acc)-maxAccBytes:]
+	}
 	for {
 		idx := bytes.IndexByte(b.acc, '\n')
 		if idx < 0 {
@@ -39,6 +44,10 @@ func (b *LogBuffer) Write(p []byte) (int, error) {
 			b.lines = b.lines[1:]
 		}
 		b.lines = append(b.lines, line)
+	}
+	// Compact acc backing array if it has grown too large relative to its content
+	if cap(b.acc) > len(b.acc)*4 && len(b.acc) > 0 {
+		b.acc = append([]byte(nil), b.acc...)
 	}
 	return len(p), nil
 }

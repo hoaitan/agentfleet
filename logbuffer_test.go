@@ -54,5 +54,15 @@ func TestLogBuffer_ConcurrentWrite(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		<-done
 	}
-	assert.LessOrEqual(t, len(lb.Lines()), 100)
+	assert.Len(t, lb.Lines(), 10)
+}
+
+func TestLogBuffer_DefaultCapacity(t *testing.T) {
+	for _, n := range []int{0, -1} {
+		lb := agentfleet.NewLogBuffer(n)
+		for i := 0; i < 205; i++ {
+			lb.Write([]byte("x\n")) //nolint:errcheck
+		}
+		assert.Len(t, lb.Lines(), 200, "NewLogBuffer(%d) should default to 200", n)
+	}
 }
