@@ -41,7 +41,6 @@ var (
 	styleSummary = lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280"))
 	styleMeta    = lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280"))
 	styleSelID   = lipgloss.NewStyle().Foreground(lipgloss.Color("#c084fc"))
-	styleOutput  = lipgloss.NewStyle().Foreground(lipgloss.Color("#d1d5db"))
 	styleFooter  = lipgloss.NewStyle().Foreground(lipgloss.Color("#4b5563"))
 	styleLog     = lipgloss.NewStyle().Foreground(lipgloss.Color("#4b5563"))
 	styleRunning = lipgloss.NewStyle().Foreground(lipgloss.Color("#4ade80"))
@@ -76,8 +75,7 @@ type model struct {
 	termH      int
 	openedTabs map[string]bool
 
-	listOffset    int // first visible visual row in task list
-	outScrollBack int // 0 = snapped to bottom; N = scrolled N lines up from bottom
+	listOffset int // first visible visual row in task list
 }
 
 // Run starts the Bubbletea TUI and blocks until the user quits or ctx is cancelled.
@@ -180,7 +178,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		all = append(all, active...)
 		all = append(all, done...)
 		total := len(all)
-		prevCursor := m.cursor
 
 		switch msg.Type {
 		case tea.KeyUp:
@@ -209,31 +206,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor > 0 {
 				m.cursor--
 			}
-		case "u":
-			m.outScrollBack++
-		case "d":
-			if m.outScrollBack > 0 {
-				m.outScrollBack--
-			}
 		case "q":
 			return m, tea.Quit
-		}
-
-		// reset right panel scroll on task change
-		if m.cursor != prevCursor {
-			m.outScrollBack = 0
-		}
-
-		// clamp outScrollBack so d-key is always immediately responsive
-		if m.cursor < len(all) {
-			lines := all[m.cursor].Lines()
-			if maxBack := len(lines) - m.mainHeight(); maxBack >= 0 {
-				if m.outScrollBack > maxBack {
-					m.outScrollBack = maxBack
-				}
-			} else {
-				m.outScrollBack = 0
-			}
 		}
 
 		// keep cursor visible in the list
@@ -270,27 +244,15 @@ func (m model) View() string {
 	}
 
 	active, done := orderedRunners(m.fleet.Runners(), m.cfg.MaxDoneTasks)
-	all := make([]*agentfleet.Runner, 0, len(active)+len(done))
-	all = append(all, active...)
-	all = append(all, done...)
 
 	mainH := m.mainHeight()
-	leftW := m.termW / 2
-	rightW := m.termW - leftW
-
-	var selRunner *agentfleet.Runner
-	if m.cursor < len(all) {
-		selRunner = all[m.cursor]
-	}
 
 	header := renderHeader(m, active, done)
-	left := renderLeft(m, active, done, mainH, leftW)
-	right := renderRight(m, selRunner, mainH, rightW)
-	main := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+	left := renderLeft(m, active, done, mainH, m.termW)
 
-	footer := styleFooter.Render("[↑↓ j/k] navigate  [u/d] scroll output  [enter] attach  [q] quit")
+	footer := styleFooter.Render("[↑↓ j/k] navigate  [enter] attach  [q] quit")
 
-	parts := []string{header, main}
+	parts := []string{header, left}
 	if m.cfg.Log != nil {
 		parts = append(parts, renderLog(m))
 	}
@@ -413,50 +375,6 @@ func renderRow(r *agentfleet.Runner, selected bool, w int) string {
 		return styleSel.Width(w).Render(rowStr)
 	}
 	return lipgloss.NewStyle().Width(w).Render(rowStr)
-}
-
-// renderRight renders the output panel for the selected task.
-func renderRight(m model, r *agentfleet.Runner, mainH, w int) string {
-	var rawLines []string
-	if r != nil {
-		rawLines = r.Lines()
-	}
-
-	lines := make([]string, len(rawLines))
-	for i, l := range rawLines {
-		lines[i] = truncateVisual(stripANSI(l), w)
-	}
-
-	total := len(lines)
-	// cap scrollback to valid range
-	maxBack := total - mainH
-	if maxBack < 0 {
-		maxBack = 0
-	}
-	scrollBack := m.outScrollBack
-	if scrollBack > maxBack {
-		scrollBack = maxBack
-	}
-	start := total - mainH - scrollBack
-	if start < 0 {
-		start = 0
-	}
-	end := start + mainH
-	if end > total {
-		end = total
-	}
-
-	visible := make([]string, mainH)
-	if total > 0 {
-		copy(visible, lines[start:end])
-	}
-
-	rowStyle := styleOutput.Width(w)
-	rendered := make([]string, mainH)
-	for i, l := range visible {
-		rendered[i] = rowStyle.Render(l)
-	}
-	return strings.Join(rendered, "\n")
 }
 
 // renderLog renders the bottom log panel.
