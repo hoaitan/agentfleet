@@ -25,11 +25,10 @@ type FleetConfig struct {
 // TUIConfig controls the Bubbletea dashboard appearance.
 type TUIConfig struct {
 	Title        func() string // header title func; nil = "◈ agentfleet"
-	Columns      int           // grid columns               — default: 3
-	PreviewLines int           // output lines shown in card — default: 3
-	CardWidth    int           // card width in chars        — default: 64
 	RefreshRate  time.Duration // TUI tick interval          — default: 500ms
 	AutoOpen     bool          // auto-open a tab for each task when it starts — default: true
+	MaxDoneTasks int           // done/failed tasks kept in list; 0 = no limit — default: 10
+	Log          *LogBuffer    // nil = no log panel
 }
 
 // AgentConfig controls PTY dimensions and environment.
@@ -49,11 +48,9 @@ func DefaultConfig() Config {
 			LogDir:         "/tmp",
 		},
 		TUI: TUIConfig{
-			Columns:      3,
-			PreviewLines: 3,
-			CardWidth:    64,
 			RefreshRate:  500 * time.Millisecond,
 			AutoOpen:     true,
+			MaxDoneTasks: 10,
 		},
 		Agent: AgentConfig{PTYRows: 24, PTYCols: 220},
 	}
