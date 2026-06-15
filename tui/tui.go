@@ -248,7 +248,7 @@ func (m model) View() string {
 	mainH := m.mainHeight()
 
 	header := renderHeader(m, active, done)
-	left := renderLeft(m, active, done, mainH, m.termW)
+	taskList := renderTaskList(m, active, done, mainH, m.termW)
 
 	footerHints := "[↑↓ j/k] navigate"
 	if m.cursor < len(active) && active[m.cursor].Status() == agentfleet.StatusRunning {
@@ -257,7 +257,7 @@ func (m model) View() string {
 	footerHints += "  [q] quit"
 	footer := styleFooter.Render(footerHints)
 
-	parts := []string{header, left}
+	parts := []string{header, taskList}
 	if m.cfg.Log != nil {
 		parts = append(parts, renderLog(m))
 	}
@@ -306,8 +306,8 @@ func statusBadge(s agentfleet.Status) string {
 	}
 }
 
-// renderLeft renders the task list left panel.
-func renderLeft(m model, active, done []*agentfleet.Runner, mainH, w int) string {
+// renderTaskList renders the full-width task list.
+func renderTaskList(m model, active, done []*agentfleet.Runner, mainH, w int) string {
 	type row struct {
 		runner  *agentfleet.Runner
 		idx     int // index into active+done
