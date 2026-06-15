@@ -412,7 +412,16 @@ func renderRight(m model, r *agentfleet.Runner, mainH, w int) string {
 	}
 
 	total := len(lines)
-	start := total - mainH - m.outScrollBack
+	// cap scrollback to valid range
+	maxBack := total - mainH
+	if maxBack < 0 {
+		maxBack = 0
+	}
+	scrollBack := m.outScrollBack
+	if scrollBack > maxBack {
+		scrollBack = maxBack
+	}
+	start := total - mainH - scrollBack
 	if start < 0 {
 		start = 0
 	}
