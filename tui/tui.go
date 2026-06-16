@@ -608,7 +608,7 @@ func renderFooter(m model, w int, invis string) string {
 	case m.pendingClose:
 		content = styleQuitConfirm.Render("Press x again to close session · c to cancel")
 	default:
-		content = styleFooter.Render("↑↓ / jk  navigate · enter  attach · x  close · q  quit")
+		content = styleFooter.Render("↑↓ / jk  navigate · enter  attach session · x  close selected session · q  quit")
 	}
 	visW := lipgloss.Width(content)
 	if w > visW {
