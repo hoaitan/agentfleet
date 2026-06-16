@@ -141,7 +141,9 @@ func openLinuxTerminal(cmd ...string) {
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(tickCmd(m.cfg.RefreshRate), ctxDoneCmd(m.ctx))
+	// ClearScreen forces a full repaint on startup, preventing stale content
+	// from a previous alt-screen session bleeding through the initial frame.
+	return tea.Batch(tea.ClearScreen, tickCmd(m.cfg.RefreshRate), ctxDoneCmd(m.ctx))
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -313,17 +315,33 @@ func renderHeader(m model, active, done []*agentfleet.Runner) string {
 	if m.cfg.Title != nil {
 		title = m.cfg.Title()
 	}
-	left := title + "  " + styleSummary.Render(summary)
 
-	if m.cfg.TitleRight == nil {
-		return left
+	right := ""
+	if m.cfg.TitleRight != nil {
+		right = m.cfg.TitleRight()
 	}
-	right := m.cfg.TitleRight()
-	gap := m.termW - lipgloss.Width(left) - lipgloss.Width(right)
+	rightW := lipgloss.Width(right)
+
+	// Try to fit title + summary + right. If tight, drop the summary.
+	// A header that wraps corrupts Bubbletea's cursor tracking for every
+	// subsequent diff render, causing bleed-through on lines below the header.
+	leftFull := title + "  " + styleSummary.Render(summary)
+	gap := m.termW - lipgloss.Width(leftFull) - rightW
 	if gap < 1 {
-		gap = 1
+		// Not enough room with summary — fall back to title-only
+		gap = m.termW - lipgloss.Width(title) - rightW
+		if gap < 1 {
+			gap = 1
+		}
+		if right == "" {
+			return title
+		}
+		return title + strings.Repeat(" ", gap) + right
 	}
-	return left + strings.Repeat(" ", gap) + right
+	if right == "" {
+		return leftFull
+	}
+	return leftFull + strings.Repeat(" ", gap) + right
 }
 
 func statusBadge(s agentfleet.Status) string {
