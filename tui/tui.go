@@ -405,7 +405,7 @@ func renderTaskList(m model, active, done []*agentfleet.Runner, mainH, w int, in
 			if dashW < 0 {
 				dashW = 0
 			}
-			lines = append(lines, styleDivider.Render("─"+label+strings.Repeat("─", dashW)+"─"))
+			lines = append(lines, invis+styleDivider.Render("─"+label+strings.Repeat("─", dashW)+"─"))
 			continue
 		}
 
@@ -426,7 +426,7 @@ func renderTaskList(m model, active, done []*agentfleet.Runner, mainH, w int, in
 			if len(lines) >= mainH {
 				break
 			}
-			lines = append(lines, cl)
+			lines = append(lines, invis+cl)
 		}
 	}
 	padLine := invis + strings.Repeat(" ", w)
