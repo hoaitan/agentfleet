@@ -5,6 +5,13 @@ import (
 	"unicode"
 )
 
+// FilterAgentChrome is the exported form of filterAgentChrome for use by callers
+// that compose their own FilterLines pipeline.
+func FilterAgentChrome(lines []string) []string { return filterAgentChrome(lines) }
+
+// StripANSI is the exported form of stripANSI for use by callers.
+func StripANSI(s string) string { return stripANSI(s) }
+
 // filterAgentChrome removes AI agent TUI shell artifacts from raw PTY output lines.
 // Filters full-width dividers, input prompts, permission banners, and processing
 // indicators emitted by agent shells (e.g. Claude Code) that add no value in a preview.

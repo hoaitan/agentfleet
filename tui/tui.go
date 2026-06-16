@@ -422,11 +422,14 @@ func renderHeader(m model, active, done []*agentfleet.Runner) string {
 	return line
 }
 
-func statusBadge(s agentfleet.Status) string {
+var spinnerFrames = []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"}
+
+func statusBadge(s agentfleet.Status, frame int) string {
 	const w = 10
 	switch s {
 	case agentfleet.StatusRunning:
-		return styleRunning.Width(w).Render("● running")
+		sp := spinnerFrames[frame%len(spinnerFrames)]
+		return styleRunning.Width(w).Render(sp + " running")
 	case agentfleet.StatusDone:
 		return styleDone.Width(w).Render("✓ done")
 	case agentfleet.StatusFailed:
@@ -460,7 +463,12 @@ func renderTaskList(m model, active, done []*agentfleet.Runner, mainH, w int, in
 		offset = len(rows)
 	}
 
-	const previewN = 3
+	const previewN = 5
+
+	filter := m.cfg.FilterLines
+	if filter == nil {
+		filter = filterAgentChrome
+	}
 
 	lines := make([]string, 0, mainH)
 	for _, row := range rows[offset:] {
@@ -480,7 +488,7 @@ func renderTaskList(m model, active, done []*agentfleet.Runner, mainH, w int, in
 		selected := row.idx == m.cursor
 		var preview []string
 		if selected {
-			filtered := filterAgentChrome(row.runner.Lines())
+			filtered := filter(row.runner.Lines())
 			start := len(filtered) - previewN
 			if start < 0 {
 				start = 0
@@ -490,7 +498,7 @@ func renderTaskList(m model, active, done []*agentfleet.Runner, mainH, w int, in
 			}
 		}
 
-		for _, cl := range strings.Split(renderCard(row.runner, selected, w, preview), "\n") {
+		for _, cl := range strings.Split(renderCard(row.runner, selected, w, preview, m.frameCount), "\n") {
 			if len(lines) >= mainH {
 				break
 			}
@@ -507,10 +515,10 @@ func renderTaskList(m model, active, done []*agentfleet.Runner, mainH, w int, in
 // renderCard renders a task as a boxed card.
 // Non-selected: 3 lines (top border + content + bottom border).
 // Selected: 3 + len(preview) lines.
-func renderCard(r *agentfleet.Runner, selected bool, w int, preview []string) string {
+func renderCard(r *agentfleet.Runner, selected bool, w int, preview []string, frameCount int) string {
 	innerW := w - 2 // RoundedBorder uses 1 char on each side
 
-	badge := statusBadge(r.Status())
+	badge := statusBadge(r.Status(), frameCount)
 	elapsed := ""
 	if r.Status() == agentfleet.StatusRunning {
 		d := time.Since(r.StartedAt()).Round(time.Second)
@@ -568,14 +576,20 @@ func shortID(id string) string {
 }
 
 // renderLog renders the bottom log panel at a fixed logH height.
-// Entries are shown latest-first within the content area; blank rows (with the
-// invisible counter) pad the bottom so Bubbletea's diff always writes them.
+// Long lines are wrapped rather than truncated. The most recent segments
+// fill the content area; blank rows pad the rest so Bubbletea's diff always
+// writes every line.
 func renderLog(m model, logH int, invis string) string {
 	w := m.termW
-
-	allLines := m.cfg.Log.Lines()
 	contentH := logH - 1 // one row reserved for the divider
-	start := len(allLines) - contentH
+
+	// Wrap every source line into display segments, collect all.
+	var segs []string
+	for _, l := range m.cfg.Log.Lines() {
+		segs = append(segs, wrapLine(l, w)...)
+	}
+	// Take the most recent contentH segments.
+	start := len(segs) - contentH
 	if start < 0 {
 		start = 0
 	}
@@ -587,17 +601,45 @@ func renderLog(m model, logH int, invis string) string {
 	}
 	divider := styleDivider.Render("─" + label + strings.Repeat("─", dashW) + "─")
 	rows := []string{invis + divider}
-	for _, l := range allLines[start:] {
+	for _, seg := range segs[start:] {
 		if len(rows) >= logH {
 			break
 		}
-		rows = append(rows, invis+styleLog.Width(w).Render(truncateVisual(l, w)))
+		rows = append(rows, invis+styleLog.Width(w).Render(seg))
 	}
 	padLine := invis + strings.Repeat(" ", w)
 	for len(rows) < logH {
 		rows = append(rows, padLine)
 	}
 	return strings.Join(rows, "\n")
+}
+
+// wrapLine splits s into visual segments each at most maxW display columns wide.
+func wrapLine(s string, maxW int) []string {
+	if maxW <= 0 {
+		return []string{""}
+	}
+	s = stripANSI(s)
+	if lipgloss.Width(s) <= maxW {
+		return []string{s}
+	}
+	var out []string
+	runes := []rune(s)
+	for len(runes) > 0 {
+		w := 0
+		cut := len(runes)
+		for i, ch := range runes {
+			cw := lipgloss.Width(string(ch))
+			if w+cw > maxW {
+				cut = i
+				break
+			}
+			w += cw
+		}
+		out = append(out, string(runes[:cut]))
+		runes = runes[cut:]
+	}
+	return out
 }
 
 func renderFooter(m model, w int, invis string) string {
