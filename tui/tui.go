@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -102,21 +103,36 @@ func OpenInTerminal(cmd ...string) {
 	}
 	cmdStr := strings.Join(cmd, " ")
 	if os.Getenv("TMUX") != "" {
-		exec.Command("tmux", append([]string{"new-window"}, cmd...)...).Start() //nolint:errcheck
+		c := exec.Command("tmux", append([]string{"new-window"}, cmd...)...)
+		c.Stdout = io.Discard
+		c.Stderr = io.Discard
+		c.Start() //nolint:errcheck
 		return
 	}
 	switch os.Getenv("TERM_PROGRAM") {
 	case "iTerm.app":
 		script := fmt.Sprintf("tell application \"iTerm2\"\ntell current window\ncreate tab with default profile command \"%s\"\nend tell\nend tell", cmdStr)
-		exec.Command("osascript", "-e", script).Start() //nolint:errcheck
+		c := exec.Command("osascript", "-e", script)
+		c.Stdout = io.Discard
+		c.Stderr = io.Discard
+		c.Start() //nolint:errcheck
 	case "Apple_Terminal":
 		script := fmt.Sprintf("tell application \"Terminal\"\ndo script \"%s\"\nactivate\nend tell", cmdStr)
-		exec.Command("osascript", "-e", script).Start() //nolint:errcheck
+		c := exec.Command("osascript", "-e", script)
+		c.Stdout = io.Discard
+		c.Stderr = io.Discard
+		c.Start() //nolint:errcheck
 	case "ghostty":
-		exec.Command("ghostty", append([]string{"-e"}, cmd...)...).Start() //nolint:errcheck
+		c := exec.Command("ghostty", append([]string{"-e"}, cmd...)...)
+		c.Stdout = io.Discard
+		c.Stderr = io.Discard
+		c.Start() //nolint:errcheck
 	default:
 		if os.Getenv("TERM") == "xterm-kitty" {
-			exec.Command("kitty", cmd...).Start() //nolint:errcheck
+			c := exec.Command("kitty", cmd...)
+			c.Stdout = io.Discard
+			c.Stderr = io.Discard
+			c.Start() //nolint:errcheck
 			return
 		}
 		openLinuxTerminal(cmd...)
@@ -134,7 +150,10 @@ func openLinuxTerminal(cmd ...string) {
 	}
 	for _, args := range candidates {
 		if _, err := exec.LookPath(args[0]); err == nil {
-			exec.Command(args[0], args[1:]...).Start() //nolint:errcheck
+			c := exec.Command(args[0], args[1:]...)
+			c.Stdout = io.Discard
+			c.Stderr = io.Discard
+			c.Start() //nolint:errcheck
 			return
 		}
 	}
