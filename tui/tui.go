@@ -77,9 +77,10 @@ type model struct {
 	openedTabs map[string]bool
 	frameCount int // incremented each tick; drives the cursor-anchor trick in View()
 
-	listOffset  int    // first visible visual row in task list
-	selectedID  string // task ID of currently selected runner; stable through list reorders
-	pendingQuit bool   // true after first q press; second q confirms quit
+	listOffset   int    // first visible visual row in task list
+	selectedID   string // task ID of currently selected runner; stable through list reorders
+	pendingQuit  bool   // true after first q press; second q confirms quit
+	pendingClose bool   // true after first x press; second x confirms close
 }
 
 // Run starts the Bubbletea TUI and blocks until the user quits or ctx is cancelled.
@@ -237,6 +238,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case tea.KeyEsc:
 			m.pendingQuit = false
+			m.pendingClose = false
 			return m, nil
 		case tea.KeyCtrlC:
 			return m, tea.Quit
@@ -252,6 +254,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor--
 			}
 		case "q":
+			m.pendingClose = false
 			if m.pendingQuit {
 				return m, tea.Quit
 			}
@@ -259,7 +262,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "c":
 			m.pendingQuit = false
+			m.pendingClose = false
 		case "x":
+			if !m.pendingClose {
+				m.pendingClose = true
+				return m, nil
+			}
+			// Second x: confirmed — fire OnClose and reset state.
+			m.pendingClose = false
 			if m.cursor < len(all) && m.cfg.OnClose != nil {
 				m.cfg.OnClose(all[m.cursor].Task().ID())
 			}
@@ -592,9 +602,12 @@ func renderLog(m model, logH int, invis string) string {
 
 func renderFooter(m model, w int, invis string) string {
 	var content string
-	if m.pendingQuit {
+	switch {
+	case m.pendingQuit:
 		content = styleQuitConfirm.Render("Press q again to quit · c to cancel")
-	} else {
+	case m.pendingClose:
+		content = styleQuitConfirm.Render("Press x again to close session · c to cancel")
+	default:
 		content = styleFooter.Render("↑↓ / jk  navigate · enter  attach · x  close · q  quit")
 	}
 	visW := lipgloss.Width(content)
