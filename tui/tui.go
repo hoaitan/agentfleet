@@ -76,7 +76,8 @@ type model struct {
 	openedTabs map[string]bool
 	frameCount int // incremented each tick; drives the cursor-anchor trick in View()
 
-	listOffset int // first visible visual row in task list
+	listOffset int   // first visible visual row in task list
+	selectedID string // task ID of currently selected runner; stable through list reorders
 }
 
 // Run starts the Bubbletea TUI and blocks until the user quits or ctx is cancelled.
@@ -180,10 +181,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-		// clamp cursor if tasks disappeared
 		active, done := orderedRunners(m.fleet.Runners(), m.cfg.MaxDoneTasks)
-		if total := len(active) + len(done); total > 0 && m.cursor >= total {
+		all := make([]*agentfleet.Runner, 0, len(active)+len(done))
+		all = append(all, active...)
+		all = append(all, done...)
+
+		// Re-anchor cursor to the same task ID each tick.
+		// orderedRunners puts newest first, so adding a new task shifts existing
+		// indices — without this, cursor silently points to a different task and
+		// Enter attaches the wrong one.
+		if m.selectedID != "" {
+			for i, r := range all {
+				if r.Task().ID() == m.selectedID {
+					m.cursor = i
+					break
+				}
+			}
+		}
+		if total := len(all); total > 0 && m.cursor >= total {
 			m.cursor = total - 1
+		}
+		// Initialise selectedID on first task
+		if m.selectedID == "" && m.cursor < len(all) {
+			m.selectedID = all[m.cursor].Task().ID()
 		}
 		return m, tickCmd(m.cfg.RefreshRate)
 
@@ -228,6 +248,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "q":
 			return m, tea.Quit
+		}
+
+		// Sync selectedID so cursor stays on same task through list reorders.
+		if m.cursor < len(all) {
+			m.selectedID = all[m.cursor].Task().ID()
 		}
 
 		// keep cursor visible — each card is ~3 visual rows
