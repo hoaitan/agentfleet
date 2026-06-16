@@ -259,6 +259,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "c":
 			m.pendingQuit = false
+		case "x":
+			if m.cursor < len(all) && m.cfg.OnClose != nil {
+				m.cfg.OnClose(all[m.cursor].Task().ID())
+			}
 		}
 
 		// Sync selectedID so cursor stays on same task through list reorders.
@@ -375,26 +379,37 @@ func renderHeader(m model, active, done []*agentfleet.Runner) string {
 	}
 	rightW := lipgloss.Width(right)
 
-	// Try to fit title + summary + right. If tight, drop the summary.
-	// A header that wraps corrupts Bubbletea's cursor tracking for every
-	// subsequent diff render, causing bleed-through on lines below the header.
+	// 2-space left/right padding: reserve 4 chars for padding, compute layout
+	// within the remaining width. A header that wraps corrupts Bubbletea's
+	// linesRendered counter, causing phantom bleed-through on every row below.
+	const pad = 2
+	innerW := m.termW - pad*2
+
+	var line string
 	leftFull := title + "  " + styleSummary.Render(summary)
-	gap := m.termW - lipgloss.Width(leftFull) - rightW
+	gap := innerW - lipgloss.Width(leftFull) - rightW
 	if gap < 1 {
 		// Not enough room with summary — fall back to title-only
-		gap = m.termW - lipgloss.Width(title) - rightW
+		gap = innerW - lipgloss.Width(title) - rightW
 		if gap < 1 {
 			gap = 1
 		}
 		if right == "" {
-			return title
+			line = title
+		} else {
+			line = title + strings.Repeat(" ", gap) + right
 		}
-		return title + strings.Repeat(" ", gap) + right
+	} else if right == "" {
+		line = leftFull
+	} else {
+		line = leftFull + strings.Repeat(" ", gap) + right
 	}
-	if right == "" {
-		return leftFull
+
+	line = strings.Repeat(" ", pad) + line
+	if visW := lipgloss.Width(line); m.termW > visW {
+		line += strings.Repeat(" ", m.termW-visW)
 	}
-	return leftFull + strings.Repeat(" ", gap) + right
+	return line
 }
 
 func statusBadge(s agentfleet.Status) string {
@@ -555,7 +570,12 @@ func renderLog(m model, logH int, invis string) string {
 		start = 0
 	}
 
-	divider := styleDivider.Width(w).Render(strings.Repeat("─", w))
+	label := " Logs "
+	dashW := w - len([]rune(label)) - 2
+	if dashW < 0 {
+		dashW = 0
+	}
+	divider := styleDivider.Render("─" + label + strings.Repeat("─", dashW) + "─")
 	rows := []string{invis + divider}
 	for _, l := range allLines[start:] {
 		if len(rows) >= logH {
@@ -575,7 +595,7 @@ func renderFooter(m model, w int, invis string) string {
 	if m.pendingQuit {
 		content = styleQuitConfirm.Render("Press q again to quit · c to cancel")
 	} else {
-		content = styleFooter.Render("↑↓ / jk  navigate · enter  attach · q  quit")
+		content = styleFooter.Render("↑↓ / jk  navigate · enter  attach · x  close · q  quit")
 	}
 	visW := lipgloss.Width(content)
 	if w > visW {
