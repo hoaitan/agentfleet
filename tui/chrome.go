@@ -60,8 +60,21 @@ func isChromeLine(s string) bool {
 		strings.HasPrefix(s, "✦") || strings.HasPrefix(s, "⭐") {
 		return true
 	}
-	// Token/time counter: "(16s·+842tokens)" or "(2s · ↓1 tokens)"
+	// Token/time counter standalone: "(16s·+842tokens)" or "(2s · ↓1 tokens)"
 	if strings.HasPrefix(s, "(") && strings.HasSuffix(s, "tokens)") {
+		return true
+	}
+	// Active tool spinner: "● Analyzing… (18s · ↓5 tokens)"
+	// The ● prefix + token suffix is the Claude Code live-update status line.
+	if strings.HasPrefix(s, "●") && strings.Contains(s, "tokens)") {
+		return true
+	}
+	// Completed tool timing: "• Sautéed for 19s" — single verb + duration
+	if strings.HasPrefix(s, "• ") && isToolTiming(strings.TrimPrefix(s, "• ")) {
+		return true
+	}
+	// Tip banners emitted inline with spinners: "| Tip: ..."
+	if strings.Contains(s, "| Tip:") {
 		return true
 	}
 	// Permission banner / mode line
@@ -77,6 +90,19 @@ func isChromeLine(s string) bool {
 		return true
 	}
 	return false
+}
+
+// isToolTiming returns true for "Sautéed for 19s" — a single capitalised verb
+// followed by "for <duration>" emitted by Claude Code after a tool completes.
+func isToolTiming(s string) bool {
+	parts := strings.Fields(s)
+	if len(parts) < 3 {
+		return false
+	}
+	runes := []rune(parts[0])
+	return unicode.IsUpper(runes[0]) &&
+		parts[1] == "for" &&
+		len(parts[2]) > 1 && parts[2][len(parts[2])-1] == 's'
 }
 
 // isThinkingVerb returns true for lines like "Galloping..." — a single

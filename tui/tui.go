@@ -28,6 +28,19 @@ var ansiRe = regexp.MustCompile(
 
 func stripANSI(s string) string {
 	s = ansiRe.ReplaceAllString(s, "")
+	// Handle \r: PTY spinners overwrite the current line by emitting \r (cursor
+	// to col 0) without a \n. This means one ring-buffer "line" may contain
+	// multiple overwrite passes like "old text\rnewer text\rnewest text".
+	// Take the last non-empty segment — the final visible content.
+	if strings.Contains(s, "\r") {
+		parts := strings.Split(s, "\r")
+		for i := len(parts) - 1; i >= 0; i-- {
+			if parts[i] != "" {
+				s = parts[i]
+				break
+			}
+		}
+	}
 	var b strings.Builder
 	for _, r := range s {
 		if r >= 0x20 || r == '\t' {
