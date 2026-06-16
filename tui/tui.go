@@ -53,18 +53,9 @@ var (
 
 type tickMsg struct{}
 type ctxDoneMsg struct{}
-type repaintMsg struct{}
 
 func tickCmd(d time.Duration) tea.Cmd {
 	return tea.Tick(d, func(time.Time) tea.Msg { return tickMsg{} })
-}
-
-// repaintCmd schedules a full-screen clear+repaint after d.
-// This periodically resets Bubbletea's linesRendered counter so any
-// cursor-tracking drift (from terminal resizes, subprocess output leaking to
-// stdout, etc.) is corrected within one repaint interval.
-func repaintCmd(d time.Duration) tea.Cmd {
-	return tea.Tick(d, func(time.Time) tea.Msg { return repaintMsg{} })
 }
 
 func ctxDoneCmd(ctx context.Context) tea.Cmd {
@@ -83,6 +74,7 @@ type model struct {
 	termW      int
 	termH      int
 	openedTabs map[string]bool
+	frameCount int // incremented each tick; drives the cursor-anchor trick in View()
 
 	listOffset int // first visible visual row in task list
 }
@@ -168,10 +160,8 @@ func openLinuxTerminal(cmd ...string) {
 	}
 }
 
-const repaintInterval = 3 * time.Second
-
 func (m model) Init() tea.Cmd {
-	return tea.Batch(tea.ClearScreen, tickCmd(m.cfg.RefreshRate), repaintCmd(repaintInterval), ctxDoneCmd(m.ctx))
+	return tea.Batch(tickCmd(m.cfg.RefreshRate), ctxDoneCmd(m.ctx))
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -179,12 +169,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ctxDoneMsg:
 		return m, tea.Quit
 
-	case repaintMsg:
-		// Periodically clear + fully repaint so any cursor-tracking drift
-		// (from the diff renderer being off by N rows) is corrected.
-		return m, tea.Batch(repaintCmd(repaintInterval), tea.ClearScreen)
-
 	case tickMsg:
+		m.frameCount++
 		if m.cfg.AutoOpen {
 			for _, r := range m.fleet.Runners() {
 				id := r.Task().ID()
@@ -311,7 +297,13 @@ func (m model) View() string {
 		mainH = 1
 	}
 
-	header := renderHeader(m, active, done)
+	// Cursor-anchor: \033[H moves the terminal cursor to absolute (0,0) when
+	// Bubbletea writes the first line. The invisible SGR sequence cycles through
+	// 256 values (one per tick) so the raw string always differs between frames,
+	// guaranteeing Bubbletea's diff never skips line 0 and \033[H always fires.
+	// This self-corrects cursor-tracking drift on every tick with no screen clear.
+	anchor := fmt.Sprintf("\033[H\033[%dm\033[m", m.frameCount%256)
+	header := anchor + renderHeader(m, active, done)
 	taskList := renderTaskList(m, active, done, mainH, m.termW)
 
 	footerHints := "[↑↓ j/k] navigate"
