@@ -231,7 +231,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// keep cursor visible — each card is ~3 visual rows
-		mainH := m.mainHeight()
+		mainH, _ := m.layoutHeights()
 		visibleCards := mainH / 3
 		if visibleCards < 1 {
 			visibleCards = 1
@@ -250,34 +250,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// logHeight returns the actual height of the log panel (dynamic, capped at termH/3).
-// Using actual line count avoids the large blank area that appears when the log is sparse.
-func (m model) logHeight() int {
-	if m.cfg.Log == nil {
-		return 0
+// layoutHeights returns the fixed line budgets for the task list and log panel.
+// Heights are derived solely from termH, so they never shift mid-session
+// (unless the user resizes). This is essential for Bubbletea's diff renderer:
+// any change in total line count between frames causes its linesRendered counter
+// to diverge from the actual cursor position, producing permanent "phantom" bleed-through.
+func (m model) layoutHeights() (mainH, logH int) {
+	remaining := m.termH - 1 // 1 line for the header
+	if remaining < 1 {
+		remaining = 1
 	}
-	max := m.termH / 3
-	if max < 2 {
-		max = 2
+	logH = remaining / 3
+	if logH < 2 {
+		logH = 2 // minimum: 1 divider + 1 content/blank
 	}
-	h := len(m.cfg.Log.Lines()) + 1 // +1 for the divider line
-	if h < 1 {
-		h = 1
+	mainH = remaining - logH
+	if mainH < 1 {
+		mainH = 1
 	}
-	if h > max {
-		h = max
-	}
-	return h
-}
-
-// mainHeight returns the usable line budget for the task list area.
-// Call logHeight() first and pass it in so both use the same snapshot.
-func (m model) mainHeight() int {
-	h := m.termH - 3 - m.logHeight()
-	if h < 1 {
-		h = 1
-	}
-	return h
+	return
 }
 
 func (m model) View() string {
@@ -286,40 +277,34 @@ func (m model) View() string {
 	}
 
 	active, done := orderedRunners(m.fleet.Runners(), m.cfg.MaxDoneTasks)
+	mainH, logH := m.layoutHeights()
 
-	// Snapshot logH ONCE so mainH and renderLog use identical values.
-	// If logHeight() were called twice (once inside mainHeight, once inside renderLog),
-	// new entries arriving between calls could make total output exceed termH,
-	// causing the terminal to scroll and old frame content to bleed through at the top.
-	logH := m.logHeight()
-	mainH := m.termH - 3 - logH // header + blank separator + footer = 3 fixed lines
-	if mainH < 1 {
-		mainH = 1
-	}
-
-	// Cursor-anchor: \033[H moves the terminal cursor to absolute (0,0) when
-	// Bubbletea writes the first line. The invisible SGR sequence cycles through
-	// 256 values (one per tick) so the raw string always differs between frames,
-	// guaranteeing Bubbletea's diff never skips line 0 and \033[H always fires.
-	// This self-corrects cursor-tracking drift on every tick with no screen clear.
+	// anchor: embedded \033[H in line 0 moves the actual terminal cursor to (0,0)
+	// before Bubbletea writes the header. This self-corrects any linesRendered drift
+	// on every tick without a screen clear — the cursor is always at the right row
+	// when line 0 is written, so all subsequent \r\n advances land on correct rows.
+	//
+	// invis: invisible SGR counter that increments every tick. Adding it to every
+	// blank/padding line makes those lines appear "changed" to Bubbletea's diff,
+	// so they are always written (never skipped). A skipped blank row that contains
+	// stale content from a previous frame will never be cleared by the diff alone —
+	// only by actually writing to that row. Combined with the anchor, this eliminates
+	// all phantom bleed-through without any screen flash.
 	anchor := fmt.Sprintf("\033[H\033[%dm\033[m", m.frameCount%256)
+	invis := fmt.Sprintf("\033[%dm\033[m", m.frameCount%256)
+
 	header := anchor + renderHeader(m, active, done)
-	taskList := renderTaskList(m, active, done, mainH, m.termW)
+	taskList := renderTaskList(m, active, done, mainH, m.termW, invis)
 
-	footerHints := "[↑↓ j/k] navigate"
-	if m.cursor < len(active) && active[m.cursor].Status() == agentfleet.StatusRunning {
-		footerHints += "  [enter] attach"
-	}
-	footerHints += "  [q] quit"
-	footer := styleFooter.Render(footerHints)
-
-	parts := []string{header, "", taskList} // blank line between header and task list
+	var parts []string
 	if m.cfg.Log != nil {
-		parts = append(parts, renderLog(m, logH))
+		parts = []string{header, taskList, renderLog(m, logH, invis)}
+	} else {
+		parts = []string{header, taskList}
 	}
-	parts = append(parts, footer)
+
 	output := strings.Join(parts, "\n")
-	// Pad to terminal height so Bubbletea's diff renderer fully overwrites stale lines.
+	// ensure exactly termH lines so linesRendered stays correct
 	if lineCount := strings.Count(output, "\n") + 1; m.termH > lineCount {
 		output += strings.Repeat("\n", m.termH-lineCount)
 	}
@@ -384,7 +369,7 @@ func statusBadge(s agentfleet.Status) string {
 }
 
 // renderTaskList renders the full-width task list as cards.
-func renderTaskList(m model, active, done []*agentfleet.Runner, mainH, w int) string {
+func renderTaskList(m model, active, done []*agentfleet.Runner, mainH, w int, invis string) string {
 	type row struct {
 		runner  *agentfleet.Runner
 		idx     int
@@ -444,8 +429,9 @@ func renderTaskList(m model, active, done []*agentfleet.Runner, mainH, w int) st
 			lines = append(lines, cl)
 		}
 	}
+	padLine := invis + strings.Repeat(" ", w)
 	for len(lines) < mainH {
-		lines = append(lines, strings.Repeat(" ", w))
+		lines = append(lines, padLine)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -513,30 +499,30 @@ func shortID(id string) string {
 	return id
 }
 
-// renderLog renders the bottom log panel.
-// logH must be the value returned by logHeight() at the start of the same View() call.
-func renderLog(m model, logH int) string {
+// renderLog renders the bottom log panel at a fixed logH height.
+// Entries are shown latest-first within the content area; blank rows (with the
+// invisible counter) pad the bottom so Bubbletea's diff always writes them.
+func renderLog(m model, logH int, invis string) string {
 	w := m.termW
 
 	allLines := m.cfg.Log.Lines()
-	total := len(allLines)
-	contentH := logH - 1 // one line reserved for the divider
-	start := total - contentH
+	contentH := logH - 1 // one row reserved for the divider
+	start := len(allLines) - contentH
 	if start < 0 {
 		start = 0
 	}
 
 	divider := styleDivider.Width(w).Render(strings.Repeat("─", w))
-	rows := []string{divider}
+	rows := []string{invis + divider}
 	for _, l := range allLines[start:] {
 		if len(rows) >= logH {
-			break // never exceed the budget
+			break
 		}
-		rows = append(rows, styleLog.Width(w).Render(truncateVisual(l, w)))
+		rows = append(rows, invis+styleLog.Width(w).Render(truncateVisual(l, w)))
 	}
-	// Pad to exactly logH so the total View() output stays at termH lines.
+	padLine := invis + strings.Repeat(" ", w)
 	for len(rows) < logH {
-		rows = append(rows, strings.Repeat(" ", w))
+		rows = append(rows, padLine)
 	}
 	return strings.Join(rows, "\n")
 }
