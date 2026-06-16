@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	agentfleet "github.com/hoaitan/agentfleet"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestLogBuffer_Write_basic(t *testing.T) {
@@ -16,7 +16,7 @@ func TestLogBuffer_Write_basic(t *testing.T) {
 
 func TestLogBuffer_Write_partialThenComplete(t *testing.T) {
 	lb := agentfleet.NewLogBuffer(10)
-	lb.Write([]byte("hel"))        //nolint:errcheck
+	lb.Write([]byte("hel"))         //nolint:errcheck
 	lb.Write([]byte("lo\nworld\n")) //nolint:errcheck
 	assert.Equal(t, []string{"hello", "world"}, lb.Lines())
 }
