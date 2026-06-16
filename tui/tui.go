@@ -422,7 +422,7 @@ func renderHeader(m model, active, done []*agentfleet.Runner) string {
 	return line
 }
 
-var spinnerFrames = []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"}
+var spinnerFrames = []string{"◐", "◓", "◑", "◒"}
 
 func statusBadge(s agentfleet.Status, frame int) string {
 	const w = 10
