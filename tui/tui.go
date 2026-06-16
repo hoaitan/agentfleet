@@ -250,9 +250,9 @@ func (m model) logHeight() int {
 }
 
 // mainHeight returns the usable line budget for the task list area.
+// Call logHeight() first and pass it in so both use the same snapshot.
 func (m model) mainHeight() int {
-	h := m.termH - 3 // header + blank separator line + footer
-	h -= m.logHeight()
+	h := m.termH - 3 - m.logHeight()
 	if h < 1 {
 		h = 1
 	}
@@ -266,7 +266,15 @@ func (m model) View() string {
 
 	active, done := orderedRunners(m.fleet.Runners(), m.cfg.MaxDoneTasks)
 
-	mainH := m.mainHeight()
+	// Snapshot logH ONCE so mainH and renderLog use identical values.
+	// If logHeight() were called twice (once inside mainHeight, once inside renderLog),
+	// new entries arriving between calls could make total output exceed termH,
+	// causing the terminal to scroll and old frame content to bleed through at the top.
+	logH := m.logHeight()
+	mainH := m.termH - 3 - logH // header + blank separator + footer = 3 fixed lines
+	if mainH < 1 {
+		mainH = 1
+	}
 
 	header := renderHeader(m, active, done)
 	taskList := renderTaskList(m, active, done, mainH, m.termW)
@@ -280,12 +288,11 @@ func (m model) View() string {
 
 	parts := []string{header, "", taskList} // blank line between header and task list
 	if m.cfg.Log != nil {
-		parts = append(parts, renderLog(m))
+		parts = append(parts, renderLog(m, logH))
 	}
 	parts = append(parts, footer)
 	output := strings.Join(parts, "\n")
-	// Pad to terminal height so Bubbletea's diff renderer fully overwrites stale lines
-	// from a previous frame (prevents bleed-through when the view shrinks between ticks).
+	// Pad to terminal height so Bubbletea's diff renderer fully overwrites stale lines.
 	if lineCount := strings.Count(output, "\n") + 1; m.termH > lineCount {
 		output += strings.Repeat("\n", m.termH-lineCount)
 	}
@@ -464,8 +471,8 @@ func shortID(id string) string {
 }
 
 // renderLog renders the bottom log panel.
-func renderLog(m model) string {
-	logH := m.logHeight()
+// logH must be the value returned by logHeight() at the start of the same View() call.
+func renderLog(m model, logH int) string {
 	w := m.termW
 
 	allLines := m.cfg.Log.Lines()
@@ -479,7 +486,14 @@ func renderLog(m model) string {
 	divider := styleDivider.Width(w).Render(strings.Repeat("─", w))
 	rows := []string{divider}
 	for _, l := range allLines[start:] {
+		if len(rows) >= logH {
+			break // never exceed the budget
+		}
 		rows = append(rows, styleLog.Width(w).Render(truncateVisual(l, w)))
+	}
+	// Pad to exactly logH so the total View() output stays at termH lines.
+	for len(rows) < logH {
+		rows = append(rows, strings.Repeat(" ", w))
 	}
 	return strings.Join(rows, "\n")
 }
