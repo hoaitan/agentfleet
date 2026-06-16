@@ -422,13 +422,13 @@ func renderHeader(m model, active, done []*agentfleet.Runner) string {
 	return line
 }
 
-var spinnerFrames = []string{"◐", "◓", "◑", "◒"}
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 func statusBadge(s agentfleet.Status, frame int) string {
 	const w = 10
 	switch s {
 	case agentfleet.StatusRunning:
-		sp := spinnerFrames[frame%len(spinnerFrames)]
+		sp := spinnerFrames[(frame*2)%len(spinnerFrames)] // step 2 per tick → ~2.5s cycle
 		return styleRunning.Width(w).Render(sp + " running")
 	case agentfleet.StatusDone:
 		return styleDone.Width(w).Render("✓ done")
