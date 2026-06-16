@@ -38,17 +38,18 @@ func stripANSI(s string) string {
 }
 
 var (
-	styleTitle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#c084fc"))
-	styleSummary = lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280"))
-	styleMeta    = lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280"))
-	styleSelID   = lipgloss.NewStyle().Foreground(lipgloss.Color("#c084fc"))
-	styleFooter  = lipgloss.NewStyle().Foreground(lipgloss.Color("#4b5563"))
-	styleLog     = lipgloss.NewStyle().Foreground(lipgloss.Color("#4b5563"))
-	styleRunning = lipgloss.NewStyle().Foreground(lipgloss.Color("#4ade80"))
-	styleDone    = lipgloss.NewStyle().Foreground(lipgloss.Color("#34d399"))
-	styleFailed  = lipgloss.NewStyle().Foreground(lipgloss.Color("#f87171"))
-	stylePending = lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280"))
-	styleDivider = lipgloss.NewStyle().Foreground(lipgloss.Color("#374151"))
+	styleTitle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#c084fc"))
+	styleSummary     = lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280"))
+	styleMeta        = lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280"))
+	styleSelID       = lipgloss.NewStyle().Foreground(lipgloss.Color("#c084fc"))
+	styleFooter      = lipgloss.NewStyle().Foreground(lipgloss.Color("#4b5563"))
+	styleQuitConfirm = lipgloss.NewStyle().Foreground(lipgloss.Color("#f59e0b"))
+	styleLog         = lipgloss.NewStyle().Foreground(lipgloss.Color("#4b5563"))
+	styleRunning     = lipgloss.NewStyle().Foreground(lipgloss.Color("#4ade80"))
+	styleDone        = lipgloss.NewStyle().Foreground(lipgloss.Color("#34d399"))
+	styleFailed      = lipgloss.NewStyle().Foreground(lipgloss.Color("#f87171"))
+	stylePending     = lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280"))
+	styleDivider     = lipgloss.NewStyle().Foreground(lipgloss.Color("#374151"))
 )
 
 type tickMsg struct{}
@@ -76,8 +77,9 @@ type model struct {
 	openedTabs map[string]bool
 	frameCount int // incremented each tick; drives the cursor-anchor trick in View()
 
-	listOffset int   // first visible visual row in task list
-	selectedID string // task ID of currently selected runner; stable through list reorders
+	listOffset  int    // first visible visual row in task list
+	selectedID  string // task ID of currently selected runner; stable through list reorders
+	pendingQuit bool   // true after first q press; second q confirms quit
 }
 
 // Run starts the Bubbletea TUI and blocks until the user quits or ctx is cancelled.
@@ -233,6 +235,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.onAttach(all[m.cursor].Task().ID())
 			}
 			return m, nil
+		case tea.KeyEsc:
+			m.pendingQuit = false
+			return m, nil
 		case tea.KeyCtrlC:
 			return m, tea.Quit
 		}
@@ -247,7 +252,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor--
 			}
 		case "q":
-			return m, tea.Quit
+			if m.pendingQuit {
+				return m, tea.Quit
+			}
+			m.pendingQuit = true
+			return m, nil
+		case "c":
+			m.pendingQuit = false
 		}
 
 		// Sync selectedID so cursor stays on same task through list reorders.
@@ -281,7 +292,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // any change in total line count between frames causes its linesRendered counter
 // to diverge from the actual cursor position, producing permanent "phantom" bleed-through.
 func (m model) layoutHeights() (mainH, logH int) {
-	remaining := m.termH - 1 // 1 line for the header
+	remaining := m.termH - 2 // 1 header + 1 footer
 	if remaining < 1 {
 		remaining = 1
 	}
@@ -319,13 +330,20 @@ func (m model) View() string {
 	invis := fmt.Sprintf("\033[%dm\033[m", m.frameCount%256)
 
 	header := anchor + renderHeader(m, active, done)
-	taskList := renderTaskList(m, active, done, mainH, m.termW, invis)
+	footer := renderFooter(m, m.termW, invis)
+
+	// When there's no log panel, give the log's share of lines to the task list.
+	taskMainH := mainH
+	if m.cfg.Log == nil {
+		taskMainH = mainH + logH
+	}
+	taskList := renderTaskList(m, active, done, taskMainH, m.termW, invis)
 
 	var parts []string
 	if m.cfg.Log != nil {
-		parts = []string{header, taskList, renderLog(m, logH, invis)}
+		parts = []string{header, taskList, renderLog(m, logH, invis), footer}
 	} else {
-		parts = []string{header, taskList}
+		parts = []string{header, taskList, footer}
 	}
 
 	output := strings.Join(parts, "\n")
@@ -550,6 +568,20 @@ func renderLog(m model, logH int, invis string) string {
 		rows = append(rows, padLine)
 	}
 	return strings.Join(rows, "\n")
+}
+
+func renderFooter(m model, w int, invis string) string {
+	var content string
+	if m.pendingQuit {
+		content = styleQuitConfirm.Render("Press q again to quit · c to cancel")
+	} else {
+		content = styleFooter.Render("↑↓ / jk  navigate · enter  attach · q  quit")
+	}
+	visW := lipgloss.Width(content)
+	if w > visW {
+		content += strings.Repeat(" ", w-visW)
+	}
+	return invis + content
 }
 
 func truncateVisual(s string, maxW int) string {
