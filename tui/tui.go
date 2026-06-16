@@ -53,9 +53,18 @@ var (
 
 type tickMsg struct{}
 type ctxDoneMsg struct{}
+type repaintMsg struct{}
 
 func tickCmd(d time.Duration) tea.Cmd {
 	return tea.Tick(d, func(time.Time) tea.Msg { return tickMsg{} })
+}
+
+// repaintCmd schedules a full-screen clear+repaint after d.
+// This periodically resets Bubbletea's linesRendered counter so any
+// cursor-tracking drift (from terminal resizes, subprocess output leaking to
+// stdout, etc.) is corrected within one repaint interval.
+func repaintCmd(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(time.Time) tea.Msg { return repaintMsg{} })
 }
 
 func ctxDoneCmd(ctx context.Context) tea.Cmd {
@@ -159,16 +168,21 @@ func openLinuxTerminal(cmd ...string) {
 	}
 }
 
+const repaintInterval = 3 * time.Second
+
 func (m model) Init() tea.Cmd {
-	// ClearScreen forces a full repaint on startup, preventing stale content
-	// from a previous alt-screen session bleeding through the initial frame.
-	return tea.Batch(tea.ClearScreen, tickCmd(m.cfg.RefreshRate), ctxDoneCmd(m.ctx))
+	return tea.Batch(tea.ClearScreen, tickCmd(m.cfg.RefreshRate), repaintCmd(repaintInterval), ctxDoneCmd(m.ctx))
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case ctxDoneMsg:
 		return m, tea.Quit
+
+	case repaintMsg:
+		// Periodically clear + fully repaint so any cursor-tracking drift
+		// (from the diff renderer being off by N rows) is corrected.
+		return m, tea.Batch(repaintCmd(repaintInterval), tea.ClearScreen)
 
 	case tickMsg:
 		if m.cfg.AutoOpen {
