@@ -93,6 +93,13 @@ type ringHook struct {
 	acc []byte
 }
 
+// partial returns the current unfinished line (bytes received since the last \n).
+func (ri *ringHook) partial() string {
+	ri.mu.Lock()
+	defer ri.mu.Unlock()
+	return string(ri.acc)
+}
+
 func (ri *ringHook) Process(p []byte, dir hook.Dir) ([]byte, error) {
 	if dir == hook.DirOut {
 		ri.mu.Lock()
@@ -136,6 +143,7 @@ type Runner struct {
 	ag         Agent
 	fw         *fanoutWriter
 	ring       *ringBuffer
+	hook       *ringHook
 	done       chan struct{}
 	prx        *proxy.Proxy
 	pw         *io.PipeWriter
@@ -179,6 +187,9 @@ func (r *Runner) Start() {
 		}
 
 		ri := &ringHook{buf: r.ring}
+		r.mu.Lock()
+		r.hook = ri
+		r.mu.Unlock()
 		r.prx = proxy.New(r.ag, pr, r.fw, r.agentCfg.PTYRows, r.agentCfg.PTYCols, hook.Chain{}, hook.Chain{tee, ri})
 		r.setStatus(StatusRunning)
 
@@ -238,7 +249,25 @@ func (r *Runner) startSocketServer() {
 
 func (r *Runner) Status() Status        { return Status(r.status.Load()) }
 func (r *Runner) Done() <-chan struct{} { return r.done }
-func (r *Runner) Lines() []string       { return r.ring.snapshot() }
+// Lines returns all committed lines plus the current partial line being
+// accumulated (bytes received since the last \n). Including the partial line
+// means streaming content is visible in the preview before the agent emits \n.
+func (r *Runner) Lines() []string {
+	lines := r.ring.snapshot()
+	r.mu.RLock()
+	h := r.hook
+	r.mu.RUnlock()
+	if h == nil {
+		return lines
+	}
+	if p := h.partial(); p != "" {
+		out := make([]string, len(lines)+1)
+		copy(out, lines)
+		out[len(lines)] = p
+		return out
+	}
+	return lines
+}
 func (r *Runner) Task() Task            { return r.task }
 func (r *Runner) setStatus(s Status)    { r.status.Store(int32(s)) }
 
