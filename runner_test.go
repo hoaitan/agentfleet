@@ -13,7 +13,7 @@ import (
 
 // testCfg returns a FleetConfig with no socket or log (safe for unit tests).
 func testCfg() agentfleet.FleetConfig {
-	return agentfleet.FleetConfig{RingBufferSize: 200}
+	return agentfleet.FleetConfig{VTERows: 200}
 }
 
 type writerFunc func([]byte) (int, error)

@@ -29,6 +29,9 @@ github.com/davecgh/go-spew/spew
 # github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f
 ## explicit; go 1.16
 github.com/erikgeiser/coninput
+# github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02
+## explicit; go 1.14
+github.com/hinshun/vt10x
 # github.com/lucasb-eyer/go-colorful v1.2.0
 ## explicit; go 1.12
 github.com/lucasb-eyer/go-colorful

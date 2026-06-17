@@ -21,7 +21,7 @@ func TestPtyAgentEnv(t *testing.T) {
 		},
 	)
 	task := &agentfleet.BasicTask{TaskID: "env-t", TaskName: "env test", Cmd: "sh"}
-	cfg := agentfleet.FleetConfig{RingBufferSize: 200}
+	cfg := agentfleet.FleetConfig{VTERows: 200}
 	r := agentfleet.NewRunner(task, ag, cfg, agentfleet.AgentConfig{
 		PTYRows: 24, PTYCols: 80,
 		Env: []string{"RETASK_FLEET_TEST_ENV=sentinel_xyz"},

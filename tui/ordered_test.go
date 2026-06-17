@@ -14,7 +14,7 @@ import (
 func makeTestRunner(id, name string) (*agentfleet.Runner, *agentfleet.MockAgent) {
 	ag := agentfleet.NewMockAgent()
 	task := &agentfleet.BasicTask{TaskID: id, TaskName: name}
-	r := agentfleet.NewRunner(task, ag, agentfleet.FleetConfig{RingBufferSize: 10}, agentfleet.AgentConfig{})
+	r := agentfleet.NewRunner(task, ag, agentfleet.FleetConfig{VTERows: 10}, agentfleet.AgentConfig{})
 	return r, ag
 }
 

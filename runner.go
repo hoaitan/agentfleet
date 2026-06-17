@@ -1,7 +1,6 @@
 package agentfleet
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"net"
@@ -59,64 +58,6 @@ func (f *fanoutWriter) removeSecondary(w io.Writer) {
 	}
 }
 
-// ringBuffer stores the last max lines of output.
-type ringBuffer struct {
-	mu    sync.RWMutex
-	lines []string
-	max   int
-}
-
-func newRingBuffer(max int) *ringBuffer {
-	return &ringBuffer{max: max, lines: make([]string, 0, max)}
-}
-
-func (r *ringBuffer) write(line string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if len(r.lines) >= r.max {
-		r.lines = r.lines[1:]
-	}
-	r.lines = append(r.lines, line)
-}
-
-func (r *ringBuffer) snapshot() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	out := make([]string, len(r.lines))
-	copy(out, r.lines)
-	return out
-}
-
-type ringHook struct {
-	mu  sync.Mutex
-	buf *ringBuffer
-	acc []byte
-}
-
-// partial returns the current unfinished line (bytes received since the last \n).
-func (ri *ringHook) partial() string {
-	ri.mu.Lock()
-	defer ri.mu.Unlock()
-	return string(ri.acc)
-}
-
-func (ri *ringHook) Process(p []byte, dir hook.Dir) ([]byte, error) {
-	if dir == hook.DirOut {
-		ri.mu.Lock()
-		ri.acc = append(ri.acc, p...)
-		for {
-			idx := bytes.IndexByte(ri.acc, '\n')
-			if idx < 0 {
-				break
-			}
-			ri.buf.write(string(ri.acc[:idx]))
-			ri.acc = ri.acc[idx+1:]
-		}
-		ri.mu.Unlock()
-	}
-	return p, nil
-}
-
 type outputTee struct{ f *os.File }
 
 func (t *outputTee) Process(p []byte, dir hook.Dir) ([]byte, error) {
@@ -127,8 +68,8 @@ func (t *outputTee) Process(p []byte, dir hook.Dir) ([]byte, error) {
 }
 
 // Runner manages one CLI agent session: starts the PTY, proxies I/O,
-// serves a Unix socket for attach, and maintains an output ring buffer.
-// Step injection is not the Runner's concern — callers write to StdinWriter().
+// serves a Unix socket for attach, and maintains a virtual terminal screen
+// for preview. Step injection is not the Runner's concern — callers write to StdinWriter().
 type Runner struct {
 	task     Task
 	cfg      FleetConfig
@@ -142,8 +83,7 @@ type Runner struct {
 	finishedAt time.Time
 	ag         Agent
 	fw         *fanoutWriter
-	ring       *ringBuffer
-	hook       *ringHook
+	vte        *vteHook
 	done       chan struct{}
 	prx        *proxy.Proxy
 	pw         *io.PipeWriter
@@ -151,9 +91,13 @@ type Runner struct {
 }
 
 func NewRunner(task Task, ag Agent, cfg FleetConfig, agentCfg AgentConfig) *Runner {
-	rbSize := cfg.RingBufferSize
-	if rbSize <= 0 {
-		rbSize = 200
+	vteRows := cfg.VTERows
+	if vteRows <= 0 {
+		vteRows = 200
+	}
+	vteCols := agentCfg.PTYCols
+	if vteCols <= 0 {
+		vteCols = 220
 	}
 	return &Runner{
 		task:     task,
@@ -161,7 +105,7 @@ func NewRunner(task Task, ag Agent, cfg FleetConfig, agentCfg AgentConfig) *Runn
 		agentCfg: agentCfg,
 		ag:       ag,
 		fw:       &fanoutWriter{primary: io.Discard},
-		ring:     newRingBuffer(rbSize),
+		vte:      newVTEHook(vteCols, vteRows),
 		done:     make(chan struct{}),
 	}
 }
@@ -186,11 +130,7 @@ func (r *Runner) Start() {
 			tee = &outputTee{f: f}
 		}
 
-		ri := &ringHook{buf: r.ring}
-		r.mu.Lock()
-		r.hook = ri
-		r.mu.Unlock()
-		r.prx = proxy.New(r.ag, pr, r.fw, r.agentCfg.PTYRows, r.agentCfg.PTYCols, hook.Chain{}, hook.Chain{tee, ri})
+		r.prx = proxy.New(r.ag, pr, r.fw, r.agentCfg.PTYRows, r.agentCfg.PTYCols, hook.Chain{}, hook.Chain{tee, r.vte})
 		r.setStatus(StatusRunning)
 
 		if r.cfg.SocketDir != "" {
@@ -247,29 +187,16 @@ func (r *Runner) startSocketServer() {
 	}()
 }
 
-func (r *Runner) Status() Status        { return Status(r.status.Load()) }
+func (r *Runner) Status() Status       { return Status(r.status.Load()) }
 func (r *Runner) Done() <-chan struct{} { return r.done }
-// Lines returns all committed lines plus the current partial line being
-// accumulated (bytes received since the last \n). Including the partial line
-// means streaming content is visible in the preview before the agent emits \n.
-func (r *Runner) Lines() []string {
-	lines := r.ring.snapshot()
-	r.mu.RLock()
-	h := r.hook
-	r.mu.RUnlock()
-	if h == nil {
-		return lines
-	}
-	if p := h.partial(); p != "" {
-		out := make([]string, len(lines)+1)
-		copy(out, lines)
-		out[len(lines)] = p
-		return out
-	}
-	return lines
-}
-func (r *Runner) Task() Task            { return r.task }
-func (r *Runner) setStatus(s Status)    { r.status.Store(int32(s)) }
+
+// Lines returns the current rendered screen of the virtual terminal emulator.
+// All control sequences (backspace, \r overwrite, cursor movement, erase-line)
+// have been applied, so the result matches what a real terminal would display.
+func (r *Runner) Lines() []string { return r.vte.Screen() }
+
+func (r *Runner) Task() Task         { return r.task }
+func (r *Runner) setStatus(s Status) { r.status.Store(int32(s)) }
 
 // SetOutput redirects agent output to w.
 func (r *Runner) SetOutput(w io.Writer) { r.fw.setPrimary(w) }

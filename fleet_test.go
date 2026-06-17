@@ -19,7 +19,7 @@ func newTestRunner(id string) (*agentfleet.Runner, *agentfleet.MockAgent) {
 }
 
 func TestFleetAddAndRunners(t *testing.T) {
-	f := agentfleet.NewFleet(agentfleet.FleetConfig{MaxConcurrent: 3, RingBufferSize: 10})
+	f := agentfleet.NewFleet(agentfleet.FleetConfig{MaxConcurrent: 3, VTERows: 10})
 	ctx := context.Background()
 
 	r1, ag1 := newTestRunner("f1")
@@ -39,7 +39,7 @@ func TestFleetAddAndRunners(t *testing.T) {
 }
 
 func TestFleetMaxConcurrent(t *testing.T) {
-	f := agentfleet.NewFleet(agentfleet.FleetConfig{MaxConcurrent: 2, RingBufferSize: 10})
+	f := agentfleet.NewFleet(agentfleet.FleetConfig{MaxConcurrent: 2, VTERows: 10})
 	ctx := context.Background()
 
 	r1, ag1 := newTestRunner("c1")
@@ -79,7 +79,7 @@ func TestFleetMaxConcurrent(t *testing.T) {
 }
 
 func TestFleetWaitCtxCancel(t *testing.T) {
-	f := agentfleet.NewFleet(agentfleet.FleetConfig{MaxConcurrent: 9, RingBufferSize: 10})
+	f := agentfleet.NewFleet(agentfleet.FleetConfig{MaxConcurrent: 9, VTERows: 10})
 	r, _ := newTestRunner("w1")
 	r.Start()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -91,7 +91,7 @@ func TestFleetWaitCtxCancel(t *testing.T) {
 }
 
 func TestFleetEmptyWait(t *testing.T) {
-	f := agentfleet.NewFleet(agentfleet.FleetConfig{MaxConcurrent: 9, RingBufferSize: 10})
+	f := agentfleet.NewFleet(agentfleet.FleetConfig{MaxConcurrent: 9, VTERows: 10})
 	ctx := context.Background()
 	// Empty fleet should return immediately
 	require.NoError(t, f.Wait(ctx))

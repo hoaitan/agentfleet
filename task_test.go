@@ -29,7 +29,7 @@ func TestCommandFields(t *testing.T) {
 func TestDefaultConfig(t *testing.T) {
 	cfg := agentfleet.DefaultConfig()
 	assert.Equal(t, 9, cfg.Fleet.MaxConcurrent)
-	assert.Equal(t, 200, cfg.Fleet.RingBufferSize)
+	assert.Equal(t, 200, cfg.Fleet.VTERows)
 	assert.Equal(t, "/tmp", cfg.Fleet.SocketDir)
 	assert.Equal(t, "/tmp", cfg.Fleet.LogDir)
 	assert.Equal(t, 10, cfg.TUI.MaxDoneTasks)

@@ -16,10 +16,10 @@ type Config struct {
 
 // FleetConfig controls task scheduling and I/O paths.
 type FleetConfig struct {
-	MaxConcurrent  int    // max tasks running in parallel — default: 9
-	RingBufferSize int    // output lines kept per runner   — default: 200
-	SocketDir      string // Unix socket dir; empty = no socket server — default: /tmp
-	LogDir         string // session log dir; empty = no log file    — default: /tmp
+	MaxConcurrent int    // max tasks running in parallel — default: 9
+	VTERows       int    // virtual terminal height per runner — default: 200
+	SocketDir     string // Unix socket dir; empty = no socket server — default: /tmp
+	LogDir        string // session log dir; empty = no log file    — default: /tmp
 }
 
 // TUIConfig controls the Bubbletea dashboard appearance.
@@ -45,10 +45,10 @@ type AgentConfig struct {
 func DefaultConfig() Config {
 	return Config{
 		Fleet: FleetConfig{
-			MaxConcurrent:  9,
-			RingBufferSize: 200,
-			SocketDir:      "/tmp",
-			LogDir:         "/tmp",
+			MaxConcurrent: 9,
+			VTERows:       200,
+			SocketDir:     "/tmp",
+			LogDir:        "/tmp",
 		},
 		TUI: TUIConfig{
 			RefreshRate:  500 * time.Millisecond,
