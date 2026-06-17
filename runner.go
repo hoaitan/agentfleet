@@ -187,7 +187,7 @@ func (r *Runner) startSocketServer() {
 	}()
 }
 
-func (r *Runner) Status() Status       { return Status(r.status.Load()) }
+func (r *Runner) Status() Status        { return Status(r.status.Load()) }
 func (r *Runner) Done() <-chan struct{} { return r.done }
 
 // Lines returns the current rendered screen of the virtual terminal emulator.
