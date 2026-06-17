@@ -57,6 +57,20 @@ func (f *Fleet) Runners() []*Runner {
 	return out
 }
 
+// Remove immediately drops the runner with the given taskID from the fleet list.
+// The runner's Done() goroutine still handles the semaphore release when the
+// PTY exits — callers should stop the runner separately before or after calling Remove.
+func (f *Fleet) Remove(taskID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, r := range f.runners {
+		if r.Task().ID() == taskID {
+			f.runners = append(f.runners[:i], f.runners[i+1:]...)
+			return
+		}
+	}
+}
+
 // Wait blocks until all Runners have completed or ctx is cancelled.
 func (f *Fleet) Wait(ctx context.Context) error {
 	done := make(chan struct{})

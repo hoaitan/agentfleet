@@ -206,18 +206,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// orderedRunners puts newest first, so adding a new task shifts existing
 		// indices — without this, cursor silently points to a different task and
 		// Enter attaches the wrong one.
+		// If the selected runner was removed from the fleet, clear selectedID so
+		// the cursor re-anchors to whatever position it now occupies.
 		if m.selectedID != "" {
+			found := false
 			for i, r := range all {
 				if r.Task().ID() == m.selectedID {
 					m.cursor = i
+					found = true
 					break
 				}
+			}
+			if !found {
+				m.selectedID = ""
 			}
 		}
 		if total := len(all); total > 0 && m.cursor >= total {
 			m.cursor = total - 1
 		}
-		// Initialise selectedID on first task
+		// Initialise selectedID on first task or after a removal.
 		if m.selectedID == "" && m.cursor < len(all) {
 			m.selectedID = all[m.cursor].Task().ID()
 		}
