@@ -211,8 +211,13 @@ func (r *Runner) StdinWriter() io.Writer {
 // Stop signals the underlying agent to terminate.
 func (r *Runner) Stop() error { return r.ag.Stop() }
 
-// Resize resizes the underlying PTY agent.
-func (r *Runner) Resize(rows, cols int) error { return r.ag.Resize(rows, cols) }
+// Resize resizes both the underlying PTY agent and the virtual terminal
+// emulator so Lines() keeps mirroring the agent's actual screen. Note the
+// argument order: the PTY/agent take (rows, cols); vt10x takes (cols, rows).
+func (r *Runner) Resize(rows, cols int) error {
+	r.vte.Resize(cols, rows)
+	return r.ag.Resize(rows, cols)
+}
 
 func (r *Runner) StartedAt() time.Time {
 	r.mu.RLock()

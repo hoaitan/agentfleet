@@ -107,3 +107,25 @@ func TestRunnerResize(t *testing.T) {
 	ag.Stop()
 	<-r.Done()
 }
+
+func TestRunnerResizeResizesVTE(t *testing.T) {
+	ag := agentfleet.NewMockAgent()
+	task := &agentfleet.BasicTask{TaskID: "rz", TaskName: "Resize", Cmd: "echo"}
+	// Start narrow: 10 cols.
+	r := agentfleet.NewRunner(task, ag, testCfg(), agentfleet.AgentConfig{PTYCols: 10, PTYRows: 4})
+	r.Start()
+
+	require.NoError(t, ag.SimulateOutput([]byte("abcdefghijKLMNO"))) // 15 chars wrap at width 10
+	time.Sleep(50 * time.Millisecond)
+	lines := r.Lines()
+	require.GreaterOrEqual(t, len(lines), 2)
+	assert.Equal(t, "abcdefghij", lines[0], "confirms initial width 10")
+
+	// Resize takes (rows, cols); the emulator must widen to 20.
+	require.NoError(t, r.Resize(4, 20))
+	require.NoError(t, ag.SimulateOutput([]byte("\x1b[2J\x1b[Habcdefghijklmnopqrst"))) // 20 chars
+	time.Sleep(50 * time.Millisecond)
+	lines = r.Lines()
+	require.NotEmpty(t, lines)
+	assert.Equal(t, "abcdefghijklmnopqrst", lines[0], "emulator widened to 20 (also proves rows/cols arg order)")
+}
