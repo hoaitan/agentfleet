@@ -60,3 +60,15 @@ func (h *vteHook) Screen() []string {
 	}
 	return out
 }
+
+// Resize changes the emulator's dimensions so the rendered screen keeps
+// mirroring the PTY after a window-size change. vt10x.Terminal.Resize acquires
+// its own internal mutex, so holding h.mu here is safe (it does not re-enter
+// h.mu).
+func (h *vteHook) Resize(cols, rows int) {
+	h.mu.Lock()
+	h.term.Resize(cols, rows)
+	h.cols = cols
+	h.rows = rows
+	h.mu.Unlock()
+}
