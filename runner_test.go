@@ -129,3 +129,33 @@ func TestRunnerResizeResizesVTE(t *testing.T) {
 	require.NotEmpty(t, lines)
 	assert.Equal(t, "abcdefghijklmnopqrst", lines[0], "emulator widened to 20 (also proves rows/cols arg order)")
 }
+
+// With PTYRows set, the emulator is exactly that tall: a cursor move to row 50
+// is clamped to the PTY height (<=6 rows of rendered screen), not the 200-row
+// FleetConfig.VTERows.
+func TestNewRunnerVTESizedFromPTYRows(t *testing.T) {
+	ag := agentfleet.NewMockAgent()
+	task := &agentfleet.BasicTask{TaskID: "sz", TaskName: "Size", Cmd: "echo"}
+	r := agentfleet.NewRunner(task, ag, agentfleet.FleetConfig{VTERows: 200}, agentfleet.AgentConfig{PTYCols: 12, PTYRows: 6})
+	r.Start()
+
+	require.NoError(t, ag.SimulateOutput([]byte("\x1b[50;1Hmark"))) // row 50 on a 6-row screen
+	time.Sleep(50 * time.Millisecond)
+	lines := r.Lines()
+	assert.LessOrEqual(t, len(lines), 6, "cursor clamped to the 6-row PTY height, not 200")
+}
+
+// With PTYRows unset (<=0), fall back to FleetConfig.VTERows so existing callers
+// that rely on a tall preview emulator keep working.
+func TestNewRunnerVTEFallsBackToVTERows(t *testing.T) {
+	ag := agentfleet.NewMockAgent()
+	task := &agentfleet.BasicTask{TaskID: "fb", TaskName: "Fallback", Cmd: "echo"}
+	r := agentfleet.NewRunner(task, ag, agentfleet.FleetConfig{VTERows: 200}, agentfleet.AgentConfig{PTYCols: 12, PTYRows: 0})
+	r.Start()
+
+	require.NoError(t, ag.SimulateOutput([]byte("\x1b[50;1Hmark"))) // row 50 valid in a 200-row screen
+	time.Sleep(50 * time.Millisecond)
+	lines := r.Lines()
+	require.Len(t, lines, 50, "200-row emulator keeps row 50")
+	assert.Equal(t, "mark", lines[49])
+}

@@ -91,7 +91,13 @@ type Runner struct {
 }
 
 func NewRunner(task Task, ag Agent, cfg FleetConfig, agentCfg AgentConfig) *Runner {
-	vteRows := cfg.VTERows
+	// The emulator mirrors the PTY, so size it from the PTY dims. Fall back to
+	// FleetConfig.VTERows (then a sane default) only when PTYRows is unset, so
+	// existing callers that don't set PTYRows keep their tall preview emulator.
+	vteRows := agentCfg.PTYRows
+	if vteRows <= 0 {
+		vteRows = cfg.VTERows
+	}
 	if vteRows <= 0 {
 		vteRows = 200
 	}
