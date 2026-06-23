@@ -91,7 +91,13 @@ type Runner struct {
 }
 
 func NewRunner(task Task, ag Agent, cfg FleetConfig, agentCfg AgentConfig) *Runner {
-	vteRows := cfg.VTERows
+	// The emulator mirrors the PTY, so size it from the PTY dims. Fall back to
+	// FleetConfig.VTERows (then a sane default) only when PTYRows is unset, so
+	// existing callers that don't set PTYRows keep their tall preview emulator.
+	vteRows := agentCfg.PTYRows
+	if vteRows <= 0 {
+		vteRows = cfg.VTERows
+	}
 	if vteRows <= 0 {
 		vteRows = 200
 	}
@@ -211,8 +217,13 @@ func (r *Runner) StdinWriter() io.Writer {
 // Stop signals the underlying agent to terminate.
 func (r *Runner) Stop() error { return r.ag.Stop() }
 
-// Resize resizes the underlying PTY agent.
-func (r *Runner) Resize(rows, cols int) error { return r.ag.Resize(rows, cols) }
+// Resize resizes both the underlying PTY agent and the virtual terminal
+// emulator so Lines() keeps mirroring the agent's actual screen. Note the
+// argument order: the PTY/agent take (rows, cols); vt10x takes (cols, rows).
+func (r *Runner) Resize(rows, cols int) error {
+	r.vte.Resize(cols, rows)
+	return r.ag.Resize(rows, cols)
+}
 
 func (r *Runner) StartedAt() time.Time {
 	r.mu.RLock()
