@@ -508,14 +508,7 @@ func renderTaskList(m model, active, done []*agentfleet.Runner, mainH, w int, in
 		selected := row.idx == m.cursor
 		var preview []string
 		if selected {
-			filtered := filter(row.runner.Lines())
-			start := len(filtered) - previewN
-			if start < 0 {
-				start = 0
-			}
-			for _, l := range filtered[start:] {
-				preview = append(preview, stripANSI(l))
-			}
+			preview = previewLines(filter(row.runner.Lines()), previewN)
 		}
 
 		for _, cl := range strings.Split(renderCard(row.runner, selected, w, preview, m.frameCount), "\n") {
@@ -530,6 +523,21 @@ func renderTaskList(m model, active, done []*agentfleet.Runner, mainH, w int, in
 		lines = append(lines, padLine)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// previewLines returns the last n filtered lines for a task card preview,
+// ANSI-stripped. The cap is independent of the emulator height, so the card
+// never grows when the session terminal is large.
+func previewLines(lines []string, n int) []string {
+	start := len(lines) - n
+	if start < 0 {
+		start = 0
+	}
+	out := make([]string, 0, n)
+	for _, l := range lines[start:] {
+		out = append(out, stripANSI(l))
+	}
+	return out
 }
 
 // renderCard renders a task as a boxed card.
