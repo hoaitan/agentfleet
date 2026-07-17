@@ -540,6 +540,16 @@ func previewLines(lines []string, n int) []string {
 	return out
 }
 
+// formatElapsed renders a running task's elapsed time. Past one hour it gains
+// an hours component, so a long session reads 1:30:00 rather than 90:00.
+func formatElapsed(d time.Duration) string {
+	d = d.Round(time.Second)
+	if h := int(d.Hours()); h > 0 {
+		return fmt.Sprintf("%d:%02d:%02d", h, int(d.Minutes())%60, int(d.Seconds())%60)
+	}
+	return fmt.Sprintf("%02d:%02d", int(d.Minutes()), int(d.Seconds())%60)
+}
+
 // renderCard renders a task as a boxed card.
 // Non-selected: 3 lines (top border + content + bottom border).
 // Selected: 3 + len(preview) lines.
@@ -549,8 +559,7 @@ func renderCard(r *agentfleet.Runner, selected bool, w int, preview []string, fr
 	badge := statusBadge(r.Status(), frameCount)
 	elapsed := ""
 	if r.Status() == agentfleet.StatusRunning {
-		d := time.Since(r.StartedAt()).Round(time.Second)
-		elapsed = fmt.Sprintf("%02d:%02d", int(d.Minutes()), int(d.Seconds())%60)
+		elapsed = formatElapsed(time.Since(r.StartedAt()))
 	}
 
 	task := r.Task()
@@ -562,7 +571,8 @@ func renderCard(r *agentfleet.Runner, selected bool, w int, preview []string, fr
 	}
 
 	idStr := idStyle.Render(shortID(task.ID()))
-	elapsedStr := styleMeta.Width(5).Render(elapsed)
+	// Width fits "25:01:02"; shorter values are padded to keep the column aligned.
+	elapsedStr := styleMeta.Width(8).Render(elapsed)
 	rightStr := idStr + "  " + elapsedStr
 	leftPrefix := cursor + badge + "  "
 
