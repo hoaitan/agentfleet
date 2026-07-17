@@ -540,6 +540,23 @@ func previewLines(lines []string, n int) []string {
 	return out
 }
 
+// formatElapsed renders a running task's elapsed time, at a precision that
+// suits its scale: mm:ss under an hour, h:mm:ss under a day, and kubectl's
+// compact d+h notation beyond that, where seconds are just noise.
+//
+// The longest output is 8 characters ("23:59:59", or "1000d23h"), which is
+// what sizes the card's elapsed column.
+func formatElapsed(d time.Duration) string {
+	d = d.Round(time.Second)
+	if days := int(d.Hours()) / 24; days > 0 {
+		return fmt.Sprintf("%dd%dh", days, int(d.Hours())%24)
+	}
+	if h := int(d.Hours()); h > 0 {
+		return fmt.Sprintf("%d:%02d:%02d", h, int(d.Minutes())%60, int(d.Seconds())%60)
+	}
+	return fmt.Sprintf("%02d:%02d", int(d.Minutes()), int(d.Seconds())%60)
+}
+
 // renderCard renders a task as a boxed card.
 // Non-selected: 3 lines (top border + content + bottom border).
 // Selected: 3 + len(preview) lines.
@@ -549,8 +566,7 @@ func renderCard(r *agentfleet.Runner, selected bool, w int, preview []string, fr
 	badge := statusBadge(r.Status(), frameCount)
 	elapsed := ""
 	if r.Status() == agentfleet.StatusRunning {
-		d := time.Since(r.StartedAt()).Round(time.Second)
-		elapsed = fmt.Sprintf("%02d:%02d", int(d.Minutes()), int(d.Seconds())%60)
+		elapsed = formatElapsed(time.Since(r.StartedAt()))
 	}
 
 	task := r.Task()
@@ -562,7 +578,8 @@ func renderCard(r *agentfleet.Runner, selected bool, w int, preview []string, fr
 	}
 
 	idStr := idStyle.Render(shortID(task.ID()))
-	elapsedStr := styleMeta.Width(5).Render(elapsed)
+	// Width fits "25:01:02"; shorter values are padded to keep the column aligned.
+	elapsedStr := styleMeta.Width(8).Render(elapsed)
 	rightStr := idStr + "  " + elapsedStr
 	leftPrefix := cursor + badge + "  "
 
