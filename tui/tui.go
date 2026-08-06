@@ -639,8 +639,8 @@ func renderLog(m model, logH int, invis string) string {
 		start = 0
 	}
 
-	label := " Logs "
-	dashW := w - len([]rune(label)) - 2
+	label := logLabel(m.cfg, w)
+	dashW := w - lipgloss.Width(label) - 2
 	if dashW < 0 {
 		dashW = 0
 	}
@@ -657,6 +657,49 @@ func renderLog(m model, logH int, invis string) string {
 		rows = append(rows, padLine)
 	}
 	return strings.Join(rows, "\n")
+}
+
+// minLogPathW is the narrowest elided path still worth showing in the divider.
+const minLogPathW = 8
+
+// logLabel builds the log panel divider label — " Logs " on its own, or
+// " Logs (/path/to/file.log) " once a log file is configured. The path is
+// elided from the left, and dropped entirely on a terminal too narrow to hold
+// it, so the divider always fits one row.
+func logLabel(cfg agentfleet.TUIConfig, w int) string {
+	const (
+		plain  = " Logs "
+		prefix = " Logs ("
+		suffix = ") "
+	)
+	if !cfg.ShowLogPath || cfg.LogPath == "" {
+		return plain
+	}
+	// Two columns are reserved for the dashes bracketing the label.
+	avail := w - 2 - lipgloss.Width(prefix) - lipgloss.Width(suffix)
+	if avail < minLogPathW {
+		return plain
+	}
+	return prefix + elideLeft(cfg.LogPath, avail) + suffix
+}
+
+// elideLeft trims s from the left to at most maxW display columns, marking the
+// cut with a leading ellipsis. Paths keep the informative tail that way.
+func elideLeft(s string, maxW int) string {
+	if lipgloss.Width(s) <= maxW || maxW <= 0 {
+		return s
+	}
+	runes := []rune(s)
+	w, i := 0, len(runes)
+	for i > 0 {
+		cw := lipgloss.Width(string(runes[i-1]))
+		if w+cw > maxW-1 { // one column for the ellipsis
+			break
+		}
+		w += cw
+		i--
+	}
+	return "…" + string(runes[i:])
 }
 
 // wrapLine splits s into visual segments each at most maxW display columns wide.
