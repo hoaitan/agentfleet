@@ -73,7 +73,7 @@ jobs:
           cache: true
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
           # Pin a golangci-lint v1 release: action@v6 is built for v1's CLI.
           # (Upgrading to v2 requires golangci-lint-action@v7+ and a v2 config.)
