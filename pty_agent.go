@@ -1,3 +1,5 @@
+//go:build !windows
+
 package agentfleet
 
 import (
@@ -42,6 +44,10 @@ func (a *PtyAgent) Start(rows, cols int) error {
 	a.cmd.Stdin = pts
 	a.cmd.Stdout = pts
 	a.cmd.Stderr = pts
+
+	if len(a.cfg.Env) > 0 {
+		a.cmd.Env = append(os.Environ(), a.cfg.Env...)
+	}
 
 	if a.cmd.SysProcAttr == nil {
 		a.cmd.SysProcAttr = &syscall.SysProcAttr{}

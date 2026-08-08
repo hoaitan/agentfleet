@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,6 +28,19 @@ var ansiRe = regexp.MustCompile(
 
 func stripANSI(s string) string {
 	s = ansiRe.ReplaceAllString(s, "")
+	// Handle \r: PTY spinners overwrite the current line by emitting \r (cursor
+	// to col 0) without a \n. This means one ring-buffer "line" may contain
+	// multiple overwrite passes like "old text\rnewer text\rnewest text".
+	// Take the last non-empty segment — the final visible content.
+	if strings.Contains(s, "\r") {
+		parts := strings.Split(s, "\r")
+		for i := len(parts) - 1; i >= 0; i-- {
+			if parts[i] != "" {
+				s = parts[i]
+				break
+			}
+		}
+	}
 	var b strings.Builder
 	for _, r := range s {
 		if r >= 0x20 || r == '\t' {
@@ -37,26 +51,18 @@ func stripANSI(s string) string {
 }
 
 var (
-	styleTitle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#c084fc"))
-	styleSummary = lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280"))
-	styleMeta    = lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280"))
-	styleSelID   = lipgloss.NewStyle().Foreground(lipgloss.Color("#c084fc"))
-	styleOutput  = lipgloss.NewStyle().Foreground(lipgloss.Color("#d1d5db"))
-	styleFooter  = lipgloss.NewStyle().Foreground(lipgloss.Color("#4b5563"))
-	styleRunning = lipgloss.NewStyle().Foreground(lipgloss.Color("#4ade80"))
-	styleDone    = lipgloss.NewStyle().Foreground(lipgloss.Color("#34d399"))
-	styleFailed  = lipgloss.NewStyle().Foreground(lipgloss.Color("#f87171"))
-	stylePending = lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280"))
-
-	cardSelStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#7c3aed")).
-			Background(lipgloss.Color("#1e1730"))
-
-	cardOtherStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#374151")).
-			Background(lipgloss.Color("#1a1826"))
+	styleTitle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#c084fc"))
+	styleSummary     = lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280"))
+	styleMeta        = lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280"))
+	styleSelID       = lipgloss.NewStyle().Foreground(lipgloss.Color("#c084fc"))
+	styleFooter      = lipgloss.NewStyle().Foreground(lipgloss.Color("#4b5563"))
+	styleQuitConfirm = lipgloss.NewStyle().Foreground(lipgloss.Color("#f59e0b"))
+	styleLog         = lipgloss.NewStyle().Foreground(lipgloss.Color("#4b5563"))
+	styleRunning     = lipgloss.NewStyle().Foreground(lipgloss.Color("#4ade80"))
+	styleDone        = lipgloss.NewStyle().Foreground(lipgloss.Color("#34d399"))
+	styleFailed      = lipgloss.NewStyle().Foreground(lipgloss.Color("#f87171"))
+	stylePending     = lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280"))
+	styleDivider     = lipgloss.NewStyle().Foreground(lipgloss.Color("#374151"))
 )
 
 type tickMsg struct{}
@@ -81,7 +87,13 @@ type model struct {
 	cursor     int
 	termW      int
 	termH      int
-	openedTabs map[string]bool // tracks runners that have already had a tab auto-opened
+	openedTabs map[string]bool
+	frameCount int // incremented each tick; drives the cursor-anchor trick in View()
+
+	listOffset   int    // first visible visual row in task list
+	selectedID   string // task ID of currently selected runner; stable through list reorders
+	pendingQuit  bool   // true after first q press; second q confirms quit
+	pendingClose bool   // true after first x press; second x confirms close
 }
 
 // Run starts the Bubbletea TUI and blocks until the user quits or ctx is cancelled.
@@ -98,43 +110,68 @@ func Run(ctx context.Context, fleet *agentfleet.Fleet, cfg agentfleet.TUIConfig,
 
 func defaultOnAttach(taskID string) {
 	attachBin, _ := filepath.Abs("./attach")
-	openInTerminal(attachBin, taskID)
+	OpenInTerminal(attachBin, taskID)
 }
 
-func openInTerminal(attachBin, taskID string) {
+// OpenInTerminal opens a new terminal tab/window running the given command.
+// Each element of cmd is a separate argument (e.g. OpenInTerminal("retask", "sandbox", "attach", id)).
+func OpenInTerminal(cmd ...string) {
+	if len(cmd) == 0 {
+		return
+	}
+	cmdStr := strings.Join(cmd, " ")
 	if os.Getenv("TMUX") != "" {
-		exec.Command("tmux", "new-window", attachBin, taskID).Start() //nolint:errcheck
+		c := exec.Command("tmux", append([]string{"new-window"}, cmd...)...)
+		c.Stdout = io.Discard
+		c.Stderr = io.Discard
+		c.Start() //nolint:errcheck
 		return
 	}
 	switch os.Getenv("TERM_PROGRAM") {
 	case "iTerm.app":
-		script := fmt.Sprintf("tell application \"iTerm2\"\ntell current window\ncreate tab with default profile command \"%s %s\"\nend tell\nend tell", attachBin, taskID)
-		exec.Command("osascript", "-e", script).Start() //nolint:errcheck
+		script := fmt.Sprintf("tell application \"iTerm2\"\ntell current window\ncreate tab with default profile command \"%s\"\nend tell\nend tell", cmdStr)
+		c := exec.Command("osascript", "-e", script)
+		c.Stdout = io.Discard
+		c.Stderr = io.Discard
+		c.Start() //nolint:errcheck
 	case "Apple_Terminal":
-		script := fmt.Sprintf("tell application \"Terminal\"\ndo script \"%s %s\"\nactivate\nend tell", attachBin, taskID)
-		exec.Command("osascript", "-e", script).Start() //nolint:errcheck
+		script := fmt.Sprintf("tell application \"Terminal\"\ndo script \"%s\"\nactivate\nend tell", cmdStr)
+		c := exec.Command("osascript", "-e", script)
+		c.Stdout = io.Discard
+		c.Stderr = io.Discard
+		c.Start() //nolint:errcheck
 	case "ghostty":
-		exec.Command("ghostty", "-e", attachBin, taskID).Start() //nolint:errcheck
+		c := exec.Command("ghostty", append([]string{"-e"}, cmd...)...)
+		c.Stdout = io.Discard
+		c.Stderr = io.Discard
+		c.Start() //nolint:errcheck
 	default:
 		if os.Getenv("TERM") == "xterm-kitty" {
-			exec.Command("kitty", attachBin, taskID).Start() //nolint:errcheck
+			c := exec.Command("kitty", cmd...)
+			c.Stdout = io.Discard
+			c.Stderr = io.Discard
+			c.Start() //nolint:errcheck
 			return
 		}
-		openLinuxTerminal(attachBin, taskID)
+		openLinuxTerminal(cmd...)
 	}
 }
 
-func openLinuxTerminal(attachBin, taskID string) {
+func openLinuxTerminal(cmd ...string) {
+	cmdStr := strings.Join(cmd, " ")
 	candidates := [][]string{
-		{"gnome-terminal", "--", attachBin, taskID},
-		{"xterm", "-e", attachBin, taskID},
-		{"alacritty", "-e", attachBin, taskID},
-		{"konsole", "-e", attachBin, taskID},
-		{"xfce4-terminal", "-e", attachBin + " " + taskID},
+		append([]string{"gnome-terminal", "--"}, cmd...),
+		append([]string{"xterm", "-e"}, cmd...),
+		append([]string{"alacritty", "-e"}, cmd...),
+		append([]string{"konsole", "-e"}, cmd...),
+		{"xfce4-terminal", "-e", cmdStr},
 	}
 	for _, args := range candidates {
 		if _, err := exec.LookPath(args[0]); err == nil {
-			exec.Command(args[0], args[1:]...).Start() //nolint:errcheck
+			c := exec.Command(args[0], args[1:]...)
+			c.Stdout = io.Discard
+			c.Stderr = io.Discard
+			c.Start() //nolint:errcheck
 			return
 		}
 	}
@@ -148,7 +185,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case ctxDoneMsg:
 		return m, tea.Quit
+
 	case tickMsg:
+		m.frameCount++
 		if m.cfg.AutoOpen {
 			for _, r := range m.fleet.Runners() {
 				id := r.Task().ID()
@@ -158,33 +197,76 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+		active, done := orderedRunners(m.fleet.Runners(), m.cfg.MaxDoneTasks)
+		all := make([]*agentfleet.Runner, 0, len(active)+len(done))
+		all = append(all, active...)
+		all = append(all, done...)
+
+		// Re-anchor cursor to the same task ID each tick.
+		// orderedRunners puts newest first, so adding a new task shifts existing
+		// indices — without this, cursor silently points to a different task and
+		// Enter attaches the wrong one.
+		// If the selected runner was removed from the fleet, clear selectedID so
+		// the cursor re-anchors to whatever position it now occupies.
+		if m.selectedID != "" {
+			found := false
+			for i, r := range all {
+				if r.Task().ID() == m.selectedID {
+					m.cursor = i
+					found = true
+					break
+				}
+			}
+			if !found {
+				m.selectedID = ""
+			}
+		}
+		if total := len(all); total > 0 && m.cursor >= total {
+			m.cursor = total - 1
+		}
+		// Initialise selectedID on first task or after a removal.
+		if m.selectedID == "" && m.cursor < len(all) {
+			m.selectedID = all[m.cursor].Task().ID()
+		}
 		return m, tickCmd(m.cfg.RefreshRate)
+
 	case tea.WindowSizeMsg:
 		m.termW = msg.Width
 		m.termH = msg.Height
 		return m, nil
+
 	case tea.KeyMsg:
-		runners := m.fleet.Runners()
+		active, done := orderedRunners(m.fleet.Runners(), m.cfg.MaxDoneTasks)
+		all := make([]*agentfleet.Runner, 0, len(active)+len(done))
+		all = append(all, active...)
+		all = append(all, done...)
+		total := len(all)
+
 		switch msg.Type {
 		case tea.KeyUp:
 			if m.cursor > 0 {
 				m.cursor--
 			}
 		case tea.KeyDown:
-			if m.cursor < len(runners)-1 {
+			if m.cursor < total-1 {
 				m.cursor++
 			}
 		case tea.KeyEnter:
-			if len(runners) > 0 && runners[m.cursor].Status() == agentfleet.StatusRunning {
-				m.onAttach(runners[m.cursor].Task().ID())
+			if m.cursor < len(all) && all[m.cursor].Status() == agentfleet.StatusRunning {
+				m.onAttach(all[m.cursor].Task().ID())
 			}
+			return m, nil
+		case tea.KeyEsc:
+			m.pendingQuit = false
+			m.pendingClose = false
 			return m, nil
 		case tea.KeyCtrlC:
 			return m, tea.Quit
 		}
+
 		switch msg.String() {
 		case "j":
-			if m.cursor < len(m.fleet.Runners())-1 {
+			if m.cursor < total-1 {
 				m.cursor++
 			}
 		case "k":
@@ -192,50 +274,182 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor--
 			}
 		case "q":
-			return m, tea.Quit
+			m.pendingClose = false
+			if m.pendingQuit {
+				return m, tea.Quit
+			}
+			m.pendingQuit = true
+			return m, nil
+		case "c":
+			m.pendingQuit = false
+			m.pendingClose = false
+		case "x":
+			if !m.pendingClose {
+				m.pendingClose = true
+				return m, nil
+			}
+			// Second x: confirmed — fire OnClose and reset state.
+			m.pendingClose = false
+			if m.cursor < len(all) && m.cfg.OnClose != nil {
+				m.cfg.OnClose(all[m.cursor].Task().ID())
+			}
+		}
+
+		// Sync selectedID so cursor stays on same task through list reorders.
+		if m.cursor < len(all) {
+			m.selectedID = all[m.cursor].Task().ID()
+		}
+
+		// keep cursor visible — each card is ~3 visual rows
+		mainH, _ := m.layoutHeights()
+		visibleCards := mainH / 3
+		if visibleCards < 1 {
+			visibleCards = 1
+		}
+		visRow := m.cursor
+		if m.cursor >= len(active) && len(active) > 0 && len(done) > 0 {
+			visRow++ // account for section divider row
+		}
+		if visRow < m.listOffset {
+			m.listOffset = visRow
+		}
+		if visRow >= m.listOffset+visibleCards {
+			m.listOffset = visRow - visibleCards + 1
 		}
 	}
 	return m, nil
 }
 
-func (m model) View() string { return renderListView(m) }
+// layoutHeights returns the fixed line budgets for the task list and log panel.
+// Heights are derived solely from termH, so they never shift mid-session
+// (unless the user resizes). This is essential for Bubbletea's diff renderer:
+// any change in total line count between frames causes its linesRendered counter
+// to diverge from the actual cursor position, producing permanent "phantom" bleed-through.
+func (m model) layoutHeights() (mainH, logH int) {
+	remaining := m.termH - 2 // 1 header + 1 footer
+	if remaining < 1 {
+		remaining = 1
+	}
+	logH = remaining / 3
+	if logH < 2 {
+		logH = 2 // minimum: 1 divider + 1 content/blank
+	}
+	mainH = remaining - logH
+	if mainH < 1 {
+		mainH = 1
+	}
+	return
+}
 
-func renderHeader(m model) string {
-	runners := m.fleet.Runners()
-	var running, done, failed int
-	for _, r := range runners {
-		switch r.Status() {
-		case agentfleet.StatusRunning:
+func (m model) View() string {
+	if m.termW == 0 || m.termH == 0 {
+		return ""
+	}
+
+	active, done := orderedRunners(m.fleet.Runners(), m.cfg.MaxDoneTasks)
+	mainH, logH := m.layoutHeights()
+
+	// anchor: embedded \033[H in line 0 moves the actual terminal cursor to (0,0)
+	// before Bubbletea writes the header. This self-corrects any linesRendered drift
+	// on every tick without a screen clear — the cursor is always at the right row
+	// when line 0 is written, so all subsequent \r\n advances land on correct rows.
+	//
+	// invis: invisible SGR counter that increments every tick. Adding it to every
+	// blank/padding line makes those lines appear "changed" to Bubbletea's diff,
+	// so they are always written (never skipped). A skipped blank row that contains
+	// stale content from a previous frame will never be cleared by the diff alone —
+	// only by actually writing to that row. Combined with the anchor, this eliminates
+	// all phantom bleed-through without any screen flash.
+	anchor := fmt.Sprintf("\033[H\033[%dm\033[m", m.frameCount%256)
+	invis := fmt.Sprintf("\033[%dm\033[m", m.frameCount%256)
+
+	header := anchor + renderHeader(m, active, done)
+	footer := renderFooter(m, m.termW, invis)
+
+	// When there's no log panel, give the log's share of lines to the task list.
+	taskMainH := mainH
+	if m.cfg.Log == nil {
+		taskMainH = mainH + logH
+	}
+	taskList := renderTaskList(m, active, done, taskMainH, m.termW, invis)
+
+	var parts []string
+	if m.cfg.Log != nil {
+		parts = []string{header, taskList, renderLog(m, logH, invis), footer}
+	} else {
+		parts = []string{header, taskList, footer}
+	}
+
+	output := strings.Join(parts, "\n")
+	// ensure exactly termH lines so linesRendered stays correct
+	if lineCount := strings.Count(output, "\n") + 1; m.termH > lineCount {
+		output += strings.Repeat("\n", m.termH-lineCount)
+	}
+	return output
+}
+
+func renderHeader(m model, active, done []*agentfleet.Runner) string {
+	var running int
+	for _, r := range active {
+		if r.Status() == agentfleet.StatusRunning {
 			running++
-		case agentfleet.StatusDone:
-			done++
-		case agentfleet.StatusFailed:
-			failed++
 		}
 	}
-	summary := fmt.Sprintf("%d tasks · %d running · %d done", len(runners), running, done)
-	if failed > 0 {
-		summary += fmt.Sprintf(" · %d failed", failed)
+	total := len(active) + len(done)
+	summary := fmt.Sprintf("%d tasks · %d running · %d done", total, running, len(done))
+
+	title := styleTitle.Render("◈ agentfleet")
+	if m.cfg.Title != nil {
+		title = m.cfg.Title()
 	}
-	return styleTitle.Render("◈ agentfleet") + "  " + styleSummary.Render(summary)
+
+	right := ""
+	if m.cfg.TitleRight != nil {
+		right = m.cfg.TitleRight()
+	}
+	rightW := lipgloss.Width(right)
+
+	// 2-space left/right padding: reserve 4 chars for padding, compute layout
+	// within the remaining width. A header that wraps corrupts Bubbletea's
+	// linesRendered counter, causing phantom bleed-through on every row below.
+	const pad = 2
+	innerW := m.termW - pad*2
+
+	var line string
+	leftFull := title + "  " + styleSummary.Render(summary)
+	gap := innerW - lipgloss.Width(leftFull) - rightW
+	if gap < 1 {
+		// Not enough room with summary — fall back to title-only
+		gap = innerW - lipgloss.Width(title) - rightW
+		if gap < 1 {
+			gap = 1
+		}
+		if right == "" {
+			line = title
+		} else {
+			line = title + strings.Repeat(" ", gap) + right
+		}
+	} else if right == "" {
+		line = leftFull
+	} else {
+		line = leftFull + strings.Repeat(" ", gap) + right
+	}
+
+	line = strings.Repeat(" ", pad) + line
+	if visW := lipgloss.Width(line); m.termW > visW {
+		line += strings.Repeat(" ", m.termW-visW)
+	}
+	return line
 }
 
-func renderListView(m model) string {
-	runners := m.fleet.Runners()
-	var b strings.Builder
-	b.WriteString(renderHeader(m) + "\n\n")
-	for i, r := range runners {
-		b.WriteString(renderCard(r, m.cfg, i == m.cursor) + "\n")
-	}
-	b.WriteString("\n" + styleFooter.Render("[↑↓ j/k] navigate  [enter] open tab  [q] quit"))
-	return b.String()
-}
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
-func statusBadge(s agentfleet.Status) string {
+func statusBadge(s agentfleet.Status, frame int) string {
 	const w = 10
 	switch s {
 	case agentfleet.StatusRunning:
-		return styleRunning.Width(w).Render("● running")
+		sp := spinnerFrames[(frame*2)%len(spinnerFrames)] // step 2 per tick → ~2.5s cycle
+		return styleRunning.Width(w).Render(sp + " running")
 	case agentfleet.StatusDone:
 		return styleDone.Width(w).Render("✓ done")
 	case agentfleet.StatusFailed:
@@ -245,7 +459,117 @@ func statusBadge(s agentfleet.Status) string {
 	}
 }
 
-func renderCard(r *agentfleet.Runner, cfg agentfleet.TUIConfig, selected bool) string {
+// renderTaskList renders the full-width task list as cards.
+func renderTaskList(m model, active, done []*agentfleet.Runner, mainH, w int, invis string) string {
+	type row struct {
+		runner  *agentfleet.Runner
+		idx     int
+		divider bool
+	}
+
+	var rows []row
+	for i, r := range active {
+		rows = append(rows, row{runner: r, idx: i})
+	}
+	if len(active) > 0 && len(done) > 0 {
+		rows = append(rows, row{divider: true})
+	}
+	for i, r := range done {
+		rows = append(rows, row{runner: r, idx: len(active) + i})
+	}
+
+	offset := m.listOffset
+	if offset > len(rows) {
+		offset = len(rows)
+	}
+
+	const previewN = 5
+
+	filter := m.cfg.FilterLines
+	if filter == nil {
+		filter = filterAgentChrome
+	}
+
+	lines := make([]string, 0, mainH)
+	for _, row := range rows[offset:] {
+		if len(lines) >= mainH {
+			break
+		}
+		if row.divider {
+			label := " done "
+			dashW := w - len([]rune(label)) - 2
+			if dashW < 0 {
+				dashW = 0
+			}
+			lines = append(lines, invis+styleDivider.Render("─"+label+strings.Repeat("─", dashW)+"─"))
+			continue
+		}
+
+		selected := row.idx == m.cursor
+		var preview []string
+		if selected {
+			preview = previewLines(filter(row.runner.Lines()), previewN)
+		}
+
+		for _, cl := range strings.Split(renderCard(row.runner, selected, w, preview, m.frameCount), "\n") {
+			if len(lines) >= mainH {
+				break
+			}
+			lines = append(lines, invis+cl)
+		}
+	}
+	padLine := invis + strings.Repeat(" ", w)
+	for len(lines) < mainH {
+		lines = append(lines, padLine)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// previewLines returns the last n filtered lines for a task card preview,
+// ANSI-stripped. The cap is independent of the emulator height, so the card
+// never grows when the session terminal is large.
+func previewLines(lines []string, n int) []string {
+	start := len(lines) - n
+	if start < 0 {
+		start = 0
+	}
+	out := make([]string, 0, n)
+	for _, l := range lines[start:] {
+		out = append(out, stripANSI(l))
+	}
+	return out
+}
+
+// formatElapsed renders a running task's elapsed time, at a precision that
+// suits its scale: mm:ss under an hour, h:mm:ss under a day, and kubectl's
+// compact d+h notation beyond that, where seconds are just noise.
+//
+// The longest output is 8 characters ("23:59:59", or "1000d23h"), which is
+// what sizes the card's elapsed column.
+func formatElapsed(d time.Duration) string {
+	d = d.Round(time.Second)
+	if days := int(d.Hours()) / 24; days > 0 {
+		return fmt.Sprintf("%dd%dh", days, int(d.Hours())%24)
+	}
+	if h := int(d.Hours()); h > 0 {
+		return fmt.Sprintf("%d:%02d:%02d", h, int(d.Minutes())%60, int(d.Seconds())%60)
+	}
+	return fmt.Sprintf("%02d:%02d", int(d.Minutes()), int(d.Seconds())%60)
+}
+
+// renderCard renders a task as a boxed card.
+// Non-selected: 3 lines (top border + content + bottom border).
+// Selected: 3 + len(preview) lines.
+func renderCard(r *agentfleet.Runner, selected bool, w int, preview []string, frameCount int) string {
+	innerW := w - 2 // RoundedBorder uses 1 char on each side
+
+	badge := statusBadge(r.Status(), frameCount)
+	elapsed := ""
+	if r.Status() == agentfleet.StatusRunning {
+		elapsed = formatElapsed(time.Since(r.StartedAt()))
+	}
+
+	task := r.Task()
 	cursor := "  "
 	idStyle := styleMeta
 	if selected {
@@ -253,59 +577,174 @@ func renderCard(r *agentfleet.Runner, cfg agentfleet.TUIConfig, selected bool) s
 		idStyle = styleSelID
 	}
 
-	badge := statusBadge(r.Status())
-	task := r.Task()
-	cursorW := lipgloss.Width(cursor)
-	idW := lipgloss.Width(idStyle.Render(task.ID()))
-	badgeW := lipgloss.Width(badge)
-	nameMaxW := cfg.CardWidth - cursorW - idW - 2 - badgeW - 1
-	if nameMaxW < 8 {
-		nameMaxW = 8
+	idStr := idStyle.Render(shortID(task.ID()))
+	// Width fits "25:01:02"; shorter values are padded to keep the column aligned.
+	elapsedStr := styleMeta.Width(8).Render(elapsed)
+	rightStr := idStr + "  " + elapsedStr
+	leftPrefix := cursor + badge + "  "
+
+	nameMaxW := innerW - lipgloss.Width(leftPrefix) - lipgloss.Width(rightStr) - 1
+	if nameMaxW < 4 {
+		nameMaxW = 4
 	}
 	name := truncateVisual(task.Name(), nameMaxW)
-	left := cursor + idStyle.Render(task.ID()) + "  " + name
-	gap := cfg.CardWidth - lipgloss.Width(left) - badgeW
+	leftStr := leftPrefix + name
+	gap := innerW - lipgloss.Width(leftStr) - lipgloss.Width(rightStr)
 	if gap < 1 {
 		gap = 1
 	}
 
-	var lines []string
-	lines = append(lines, left+strings.Repeat(" ", gap)+badge)
-
-	if selected {
-		elapsed := elapsedStr(r.StartedAt(), r.FinishedAt())
-		lines = append(lines, styleMeta.Render("  "+elapsed))
-
-		allLines := r.Lines()
-		start := len(allLines) - cfg.PreviewLines
-		if start < 0 {
-			start = 0
-		}
-		preview := allLines[start:]
-		lines = append(lines, "")
-		for i := 0; i < cfg.PreviewLines; i++ {
-			if i < len(preview) {
-				text := truncateVisual(stripANSI(preview[i]), cfg.CardWidth-4)
-				lines = append(lines, styleOutput.Render("  "+text))
-			} else {
-				lines = append(lines, "")
-			}
-		}
-		return cardSelStyle.Width(cfg.CardWidth).Render(strings.Join(lines, "\n"))
+	var sb strings.Builder
+	sb.WriteString(leftStr + strings.Repeat(" ", gap) + rightStr)
+	for _, l := range preview {
+		sb.WriteString("\n  ")
+		sb.WriteString(styleLog.Render(truncateVisual(l, innerW-2)))
 	}
 
-	return cardOtherStyle.Width(cfg.CardWidth).Render(strings.Join(lines, "\n"))
+	borderColor := lipgloss.Color("#374151")
+	if selected {
+		borderColor = lipgloss.Color("#7c3aed")
+	}
+
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor).
+		Width(innerW).
+		Render(sb.String())
 }
 
-func elapsedStr(start, end time.Time) string {
-	if start.IsZero() {
-		return ""
+func shortID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
 	}
-	if end.IsZero() {
-		end = time.Now()
+	return id
+}
+
+// renderLog renders the bottom log panel at a fixed logH height.
+// Long lines are wrapped rather than truncated. The most recent segments
+// fill the content area; blank rows pad the rest so Bubbletea's diff always
+// writes every line.
+func renderLog(m model, logH int, invis string) string {
+	w := m.termW
+	contentH := logH - 1 // one row reserved for the divider
+
+	// Wrap every source line into display segments, collect all.
+	var segs []string
+	for _, l := range m.cfg.Log.Lines() {
+		segs = append(segs, wrapLine(l, w)...)
 	}
-	d := end.Sub(start).Round(time.Second)
-	return fmt.Sprintf("%02d:%02d elapsed", int(d.Minutes()), int(d.Seconds())%60)
+	// Take the most recent contentH segments.
+	start := len(segs) - contentH
+	if start < 0 {
+		start = 0
+	}
+
+	label := logLabel(m.cfg, w)
+	dashW := w - lipgloss.Width(label) - 2
+	if dashW < 0 {
+		dashW = 0
+	}
+	divider := styleDivider.Render("─" + label + strings.Repeat("─", dashW) + "─")
+	rows := []string{invis + divider}
+	for _, seg := range segs[start:] {
+		if len(rows) >= logH {
+			break
+		}
+		rows = append(rows, invis+styleLog.Width(w).Render(seg))
+	}
+	padLine := invis + strings.Repeat(" ", w)
+	for len(rows) < logH {
+		rows = append(rows, padLine)
+	}
+	return strings.Join(rows, "\n")
+}
+
+// minLogPathW is the narrowest elided path still worth showing in the divider.
+const minLogPathW = 8
+
+// logLabel builds the log panel divider label — " Logs " on its own, or
+// " Logs (/path/to/file.log) " once a log file is configured. The path is
+// elided from the left, and dropped entirely on a terminal too narrow to hold
+// it, so the divider always fits one row.
+func logLabel(cfg agentfleet.TUIConfig, w int) string {
+	const (
+		plain  = " Logs "
+		prefix = " Logs ("
+		suffix = ") "
+	)
+	if !cfg.ShowLogPath || cfg.LogPath == "" {
+		return plain
+	}
+	// Two columns are reserved for the dashes bracketing the label.
+	avail := w - 2 - lipgloss.Width(prefix) - lipgloss.Width(suffix)
+	if avail < minLogPathW {
+		return plain
+	}
+	return prefix + elideLeft(cfg.LogPath, avail) + suffix
+}
+
+// elideLeft trims s from the left to at most maxW display columns, marking the
+// cut with a leading ellipsis. Paths keep the informative tail that way.
+func elideLeft(s string, maxW int) string {
+	if lipgloss.Width(s) <= maxW || maxW <= 0 {
+		return s
+	}
+	runes := []rune(s)
+	w, i := 0, len(runes)
+	for i > 0 {
+		cw := lipgloss.Width(string(runes[i-1]))
+		if w+cw > maxW-1 { // one column for the ellipsis
+			break
+		}
+		w += cw
+		i--
+	}
+	return "…" + string(runes[i:])
+}
+
+// wrapLine splits s into visual segments each at most maxW display columns wide.
+func wrapLine(s string, maxW int) []string {
+	if maxW <= 0 {
+		return []string{""}
+	}
+	s = stripANSI(s)
+	if lipgloss.Width(s) <= maxW {
+		return []string{s}
+	}
+	var out []string
+	runes := []rune(s)
+	for len(runes) > 0 {
+		w := 0
+		cut := len(runes)
+		for i, ch := range runes {
+			cw := lipgloss.Width(string(ch))
+			if w+cw > maxW {
+				cut = i
+				break
+			}
+			w += cw
+		}
+		out = append(out, string(runes[:cut]))
+		runes = runes[cut:]
+	}
+	return out
+}
+
+func renderFooter(m model, w int, invis string) string {
+	var content string
+	switch {
+	case m.pendingQuit:
+		content = styleQuitConfirm.Render("Press q again to quit · c to cancel")
+	case m.pendingClose:
+		content = styleQuitConfirm.Render("Press x again to close session · c to cancel")
+	default:
+		content = styleFooter.Render("↑↓ / jk  navigate · enter  attach session · x  close selected session · q  quit")
+	}
+	visW := lipgloss.Width(content)
+	if w > visW {
+		content += strings.Repeat(" ", w-visW)
+	}
+	return invis + content
 }
 
 func truncateVisual(s string, maxW int) string {

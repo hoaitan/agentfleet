@@ -3,8 +3,6 @@ package proxy
 import (
 	"io"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"golang.org/x/term"
 
@@ -60,16 +58,7 @@ func (p *Proxy) Run() error {
 			enableOutputProcessing(int(f.Fd()))
 		}
 
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGWINCH)
-		defer signal.Stop(sigCh)
-		go func() {
-			for range sigCh {
-				if c, r, err := term.GetSize(int(f.Fd())); err == nil {
-					_ = p.ag.Resize(r, c)
-				}
-			}
-		}()
+		defer watchResize(int(f.Fd()), p.ag)()
 	}
 
 	if err := p.ag.Start(rows, cols); err != nil {

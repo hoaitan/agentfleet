@@ -1,7 +1,6 @@
 package agentfleet
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"net"
@@ -15,74 +14,48 @@ import (
 	"github.com/hoaitan/agentfleet/internal/proxy"
 )
 
-// switchWriter is an io.Writer whose target can be swapped at runtime.
-type switchWriter struct {
-	mu sync.RWMutex
-	w  io.Writer
+// fanoutWriter writes to a primary writer (set via SetOutput) plus any number
+// of secondary writers (socket attach clients). Secondary writers are best-effort;
+// errors are silently ignored so a slow or disconnected client never blocks PTY output.
+type fanoutWriter struct {
+	mu        sync.RWMutex
+	primary   io.Writer
+	secondary []io.Writer
 }
 
-func (s *switchWriter) Write(p []byte) (int, error) {
-	s.mu.RLock()
-	w := s.w
-	s.mu.RUnlock()
-	return w.Write(p)
-}
-
-func (s *switchWriter) set(w io.Writer) {
-	s.mu.Lock()
-	s.w = w
-	s.mu.Unlock()
-}
-
-// ringBuffer stores the last max lines of output.
-type ringBuffer struct {
-	mu    sync.RWMutex
-	lines []string
-	max   int
-}
-
-func newRingBuffer(max int) *ringBuffer {
-	return &ringBuffer{max: max, lines: make([]string, 0, max)}
-}
-
-func (r *ringBuffer) write(line string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if len(r.lines) >= r.max {
-		r.lines = r.lines[1:]
+func (f *fanoutWriter) Write(p []byte) (int, error) {
+	f.mu.RLock()
+	primary := f.primary
+	secondary := f.secondary
+	f.mu.RUnlock()
+	n, err := primary.Write(p)
+	for _, w := range secondary {
+		w.Write(p) //nolint:errcheck
 	}
-	r.lines = append(r.lines, line)
+	return n, err
 }
 
-func (r *ringBuffer) snapshot() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	out := make([]string, len(r.lines))
-	copy(out, r.lines)
-	return out
+func (f *fanoutWriter) setPrimary(w io.Writer) {
+	f.mu.Lock()
+	f.primary = w
+	f.mu.Unlock()
 }
 
-type ringHook struct {
-	mu  sync.Mutex
-	buf *ringBuffer
-	acc []byte
+func (f *fanoutWriter) addSecondary(w io.Writer) {
+	f.mu.Lock()
+	f.secondary = append(f.secondary, w)
+	f.mu.Unlock()
 }
 
-func (ri *ringHook) Process(p []byte, dir hook.Dir) ([]byte, error) {
-	if dir == hook.DirOut {
-		ri.mu.Lock()
-		ri.acc = append(ri.acc, p...)
-		for {
-			idx := bytes.IndexByte(ri.acc, '\n')
-			if idx < 0 {
-				break
-			}
-			ri.buf.write(string(ri.acc[:idx]))
-			ri.acc = ri.acc[idx+1:]
+func (f *fanoutWriter) removeSecondary(w io.Writer) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, sw := range f.secondary {
+		if sw == w {
+			f.secondary = append(f.secondary[:i], f.secondary[i+1:]...)
+			return
 		}
-		ri.mu.Unlock()
 	}
-	return p, nil
 }
 
 type outputTee struct{ f *os.File }
@@ -95,8 +68,8 @@ func (t *outputTee) Process(p []byte, dir hook.Dir) ([]byte, error) {
 }
 
 // Runner manages one CLI agent session: starts the PTY, proxies I/O,
-// serves a Unix socket for attach, and maintains an output ring buffer.
-// Step injection is not the Runner's concern — callers write to StdinWriter().
+// serves a Unix socket for attach, and maintains a virtual terminal screen
+// for preview. Step injection is not the Runner's concern — callers write to StdinWriter().
 type Runner struct {
 	task     Task
 	cfg      FleetConfig
@@ -109,8 +82,8 @@ type Runner struct {
 	startedAt  time.Time
 	finishedAt time.Time
 	ag         Agent
-	sw         *switchWriter
-	ring       *ringBuffer
+	fw         *fanoutWriter
+	vte        *vteHook
 	done       chan struct{}
 	prx        *proxy.Proxy
 	pw         *io.PipeWriter
@@ -118,17 +91,27 @@ type Runner struct {
 }
 
 func NewRunner(task Task, ag Agent, cfg FleetConfig, agentCfg AgentConfig) *Runner {
-	rbSize := cfg.RingBufferSize
-	if rbSize <= 0 {
-		rbSize = 200
+	// The emulator mirrors the PTY, so size it from the PTY dims. Fall back to
+	// FleetConfig.VTERows (then a sane default) only when PTYRows is unset, so
+	// existing callers that don't set PTYRows keep their tall preview emulator.
+	vteRows := agentCfg.PTYRows
+	if vteRows <= 0 {
+		vteRows = cfg.VTERows
+	}
+	if vteRows <= 0 {
+		vteRows = 200
+	}
+	vteCols := agentCfg.PTYCols
+	if vteCols <= 0 {
+		vteCols = 220
 	}
 	return &Runner{
 		task:     task,
 		cfg:      cfg,
 		agentCfg: agentCfg,
 		ag:       ag,
-		sw:       &switchWriter{w: io.Discard},
-		ring:     newRingBuffer(rbSize),
+		fw:       &fanoutWriter{primary: io.Discard},
+		vte:      newVTEHook(vteCols, vteRows),
 		done:     make(chan struct{}),
 	}
 }
@@ -153,8 +136,7 @@ func (r *Runner) Start() {
 			tee = &outputTee{f: f}
 		}
 
-		ri := &ringHook{buf: r.ring}
-		r.prx = proxy.New(r.ag, pr, r.sw, r.agentCfg.PTYRows, r.agentCfg.PTYCols, hook.Chain{}, hook.Chain{tee, ri})
+		r.prx = proxy.New(r.ag, pr, r.fw, r.agentCfg.PTYRows, r.agentCfg.PTYCols, hook.Chain{}, hook.Chain{tee, r.vte})
 		r.setStatus(StatusRunning)
 
 		if r.cfg.SocketDir != "" {
@@ -189,19 +171,8 @@ func (r *Runner) startSocketServer() {
 		return
 	}
 
-	var (
-		connected  atomic.Bool
-		activeMu   sync.Mutex
-		activeConn net.Conn
-	)
-
 	go func() {
 		<-r.done
-		activeMu.Lock()
-		if activeConn != nil {
-			activeConn.Close()
-		}
-		activeMu.Unlock()
 		ln.Close()
 		os.Remove(path)
 	}()
@@ -212,26 +183,11 @@ func (r *Runner) startSocketServer() {
 			if err != nil {
 				return
 			}
-			if !connected.CompareAndSwap(false, true) {
-				conn.Write([]byte("already attached\n")) //nolint:errcheck
-				conn.Close()
-				continue
-			}
-			activeMu.Lock()
-			activeConn = conn
-			activeMu.Unlock()
-
 			go func() {
-				defer func() {
-					activeMu.Lock()
-					activeConn = nil
-					activeMu.Unlock()
-					r.SetOutput(io.Discard)
-					connected.Store(false)
-					conn.Close()
-				}()
-				r.SetOutput(conn)
+				r.fw.addSecondary(conn)
 				io.Copy(r.StdinWriter(), conn) //nolint:errcheck
+				r.fw.removeSecondary(conn)
+				conn.Close()
 			}()
 		}
 	}()
@@ -239,12 +195,17 @@ func (r *Runner) startSocketServer() {
 
 func (r *Runner) Status() Status        { return Status(r.status.Load()) }
 func (r *Runner) Done() <-chan struct{} { return r.done }
-func (r *Runner) Lines() []string       { return r.ring.snapshot() }
-func (r *Runner) Task() Task            { return r.task }
-func (r *Runner) setStatus(s Status)    { r.status.Store(int32(s)) }
+
+// Lines returns the current rendered screen of the virtual terminal emulator.
+// All control sequences (backspace, \r overwrite, cursor movement, erase-line)
+// have been applied, so the result matches what a real terminal would display.
+func (r *Runner) Lines() []string { return r.vte.Screen() }
+
+func (r *Runner) Task() Task         { return r.task }
+func (r *Runner) setStatus(s Status) { r.status.Store(int32(s)) }
 
 // SetOutput redirects agent output to w.
-func (r *Runner) SetOutput(w io.Writer) { r.sw.set(w) }
+func (r *Runner) SetOutput(w io.Writer) { r.fw.setPrimary(w) }
 
 // StdinWriter returns a writer whose bytes are forwarded to the agent's stdin.
 func (r *Runner) StdinWriter() io.Writer {
@@ -255,6 +216,14 @@ func (r *Runner) StdinWriter() io.Writer {
 
 // Stop signals the underlying agent to terminate.
 func (r *Runner) Stop() error { return r.ag.Stop() }
+
+// Resize resizes both the underlying PTY agent and the virtual terminal
+// emulator so Lines() keeps mirroring the agent's actual screen. Note the
+// argument order: the PTY/agent take (rows, cols); vt10x takes (cols, rows).
+func (r *Runner) Resize(rows, cols int) error {
+	r.vte.Resize(cols, rows)
+	return r.ag.Resize(rows, cols)
+}
 
 func (r *Runner) StartedAt() time.Time {
 	r.mu.RLock()
