@@ -9,9 +9,10 @@ import (
 
 // Config holds all configuration for a fleet run.
 type Config struct {
-	Fleet FleetConfig
-	TUI   TUIConfig
-	Agent AgentConfig
+	Fleet   FleetConfig
+	TUI     TUIConfig
+	Agent   AgentConfig
+	LogFile LogFileConfig
 }
 
 // FleetConfig controls task scheduling and I/O paths.
@@ -30,6 +31,8 @@ type TUIConfig struct {
 	AutoOpen     bool                    // auto-open a tab for each task when it starts — default: true
 	MaxDoneTasks int                     // done/failed tasks kept in list; 0 = no limit — default: 10
 	Log          *LogBuffer              // nil = no log panel
+	LogPath      string                  // log file shown in the log panel divider; empty = none
+	ShowLogPath  bool                    // render LogPath in the divider — default: true
 	OnClose      func(taskID string)     // called when user presses x on a selected task; nil = no-op
 	FilterLines  func([]string) []string // pre-process runner output before preview; nil = default chrome filter
 }
@@ -54,8 +57,14 @@ func DefaultConfig() Config {
 			RefreshRate:  500 * time.Millisecond,
 			AutoOpen:     true,
 			MaxDoneTasks: 10,
+			ShowLogPath:  true,
 		},
 		Agent: AgentConfig{PTYRows: 24, PTYCols: 220},
+		LogFile: LogFileConfig{
+			Enabled:  true,
+			MaxBytes: DefaultLogMaxBytes,
+			Backups:  DefaultLogBackups,
+		},
 	}
 }
 
