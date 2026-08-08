@@ -508,14 +508,7 @@ func renderTaskList(m model, active, done []*agentfleet.Runner, mainH, w int, in
 		selected := row.idx == m.cursor
 		var preview []string
 		if selected {
-			filtered := filter(row.runner.Lines())
-			start := len(filtered) - previewN
-			if start < 0 {
-				start = 0
-			}
-			for _, l := range filtered[start:] {
-				preview = append(preview, stripANSI(l))
-			}
+			preview = previewLines(filter(row.runner.Lines()), previewN)
 		}
 
 		for _, cl := range strings.Split(renderCard(row.runner, selected, w, preview, m.frameCount), "\n") {
@@ -532,6 +525,38 @@ func renderTaskList(m model, active, done []*agentfleet.Runner, mainH, w int, in
 	return strings.Join(lines, "\n")
 }
 
+// previewLines returns the last n filtered lines for a task card preview,
+// ANSI-stripped. The cap is independent of the emulator height, so the card
+// never grows when the session terminal is large.
+func previewLines(lines []string, n int) []string {
+	start := len(lines) - n
+	if start < 0 {
+		start = 0
+	}
+	out := make([]string, 0, n)
+	for _, l := range lines[start:] {
+		out = append(out, stripANSI(l))
+	}
+	return out
+}
+
+// formatElapsed renders a running task's elapsed time, at a precision that
+// suits its scale: mm:ss under an hour, h:mm:ss under a day, and kubectl's
+// compact d+h notation beyond that, where seconds are just noise.
+//
+// The longest output is 8 characters ("23:59:59", or "1000d23h"), which is
+// what sizes the card's elapsed column.
+func formatElapsed(d time.Duration) string {
+	d = d.Round(time.Second)
+	if days := int(d.Hours()) / 24; days > 0 {
+		return fmt.Sprintf("%dd%dh", days, int(d.Hours())%24)
+	}
+	if h := int(d.Hours()); h > 0 {
+		return fmt.Sprintf("%d:%02d:%02d", h, int(d.Minutes())%60, int(d.Seconds())%60)
+	}
+	return fmt.Sprintf("%02d:%02d", int(d.Minutes()), int(d.Seconds())%60)
+}
+
 // renderCard renders a task as a boxed card.
 // Non-selected: 3 lines (top border + content + bottom border).
 // Selected: 3 + len(preview) lines.
@@ -541,8 +566,7 @@ func renderCard(r *agentfleet.Runner, selected bool, w int, preview []string, fr
 	badge := statusBadge(r.Status(), frameCount)
 	elapsed := ""
 	if r.Status() == agentfleet.StatusRunning {
-		d := time.Since(r.StartedAt()).Round(time.Second)
-		elapsed = fmt.Sprintf("%02d:%02d", int(d.Minutes()), int(d.Seconds())%60)
+		elapsed = formatElapsed(time.Since(r.StartedAt()))
 	}
 
 	task := r.Task()
@@ -554,7 +578,8 @@ func renderCard(r *agentfleet.Runner, selected bool, w int, preview []string, fr
 	}
 
 	idStr := idStyle.Render(shortID(task.ID()))
-	elapsedStr := styleMeta.Width(5).Render(elapsed)
+	// Width fits "25:01:02"; shorter values are padded to keep the column aligned.
+	elapsedStr := styleMeta.Width(8).Render(elapsed)
 	rightStr := idStr + "  " + elapsedStr
 	leftPrefix := cursor + badge + "  "
 
@@ -614,8 +639,8 @@ func renderLog(m model, logH int, invis string) string {
 		start = 0
 	}
 
-	label := " Logs "
-	dashW := w - len([]rune(label)) - 2
+	label := logLabel(m.cfg, w)
+	dashW := w - lipgloss.Width(label) - 2
 	if dashW < 0 {
 		dashW = 0
 	}
@@ -632,6 +657,49 @@ func renderLog(m model, logH int, invis string) string {
 		rows = append(rows, padLine)
 	}
 	return strings.Join(rows, "\n")
+}
+
+// minLogPathW is the narrowest elided path still worth showing in the divider.
+const minLogPathW = 8
+
+// logLabel builds the log panel divider label — " Logs " on its own, or
+// " Logs (/path/to/file.log) " once a log file is configured. The path is
+// elided from the left, and dropped entirely on a terminal too narrow to hold
+// it, so the divider always fits one row.
+func logLabel(cfg agentfleet.TUIConfig, w int) string {
+	const (
+		plain  = " Logs "
+		prefix = " Logs ("
+		suffix = ") "
+	)
+	if !cfg.ShowLogPath || cfg.LogPath == "" {
+		return plain
+	}
+	// Two columns are reserved for the dashes bracketing the label.
+	avail := w - 2 - lipgloss.Width(prefix) - lipgloss.Width(suffix)
+	if avail < minLogPathW {
+		return plain
+	}
+	return prefix + elideLeft(cfg.LogPath, avail) + suffix
+}
+
+// elideLeft trims s from the left to at most maxW display columns, marking the
+// cut with a leading ellipsis. Paths keep the informative tail that way.
+func elideLeft(s string, maxW int) string {
+	if lipgloss.Width(s) <= maxW || maxW <= 0 {
+		return s
+	}
+	runes := []rune(s)
+	w, i := 0, len(runes)
+	for i > 0 {
+		cw := lipgloss.Width(string(runes[i-1]))
+		if w+cw > maxW-1 { // one column for the ellipsis
+			break
+		}
+		w += cw
+		i--
+	}
+	return "…" + string(runes[i:])
 }
 
 // wrapLine splits s into visual segments each at most maxW display columns wide.

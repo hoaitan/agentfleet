@@ -138,8 +138,13 @@ cfg := agentfleet.DefaultConfig()
 // cfg.Fleet.LogDir         = "/tmp" (default; empty = no log file)
 // cfg.TUI.Columns          = 3
 // cfg.TUI.RefreshRate      = 500ms
+// cfg.TUI.ShowLogPath      = true   (render cfg.TUI.LogPath in the log divider)
 // cfg.Agent.PTYRows        = 24
 // cfg.Agent.PTYCols        = 220
+// cfg.LogFile.Enabled      = true
+// cfg.LogFile.Path         = ""     (empty = <cwd>/agentfleet.log)
+// cfg.LogFile.MaxBytes     = 10MB   (0 = never rotate)
+// cfg.LogFile.Backups      = 5      (0 = truncate, keep no generations)
 
 cfg.Agent = agentfleet.AgentConfigFromTerminal() // read from actual terminal
 ```
@@ -276,3 +281,20 @@ ANTHROPIC_API_KEY=sk-... go run ./examples/generate-manager/ --generate "Run 5 c
 ### Log a session
 
 Set `FleetConfig.LogDir` to a directory path (e.g., `cfg.Fleet.LogDir = "/var/log/agentfleet"`). The Runner writes to `{LogDir}/agentfleet-{task-id}.log`. Set to `""` to disable.
+
+### Persist the process log stream
+
+Session logs (above) record agent PTY traffic. The *process* log stream — whatever the host writes through `slog` — is separate, and `LogFileConfig` covers it:
+
+```go
+logFile, err := agentfleet.OpenLogFile(cfg.LogFile) // nil, nil when Enabled is false
+defer logFile.Close()
+
+logBuf := agentfleet.NewLogBuffer(500)
+cfg.TUI.Log     = logBuf
+cfg.TUI.LogPath = logFile.Path() // divider renders " Logs (<path>) "
+
+logger := slog.New(slog.NewTextHandler(io.MultiWriter(logBuf, logFile), nil))
+```
+
+`*LogFile` is nil-safe on every method, so a disabled log file needs no branching at the call site. Rotation is Unix-style: the live file keeps its name and older generations shift down through `<path>.1` … `<path>.N`.
