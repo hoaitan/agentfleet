@@ -51,6 +51,45 @@ func main() {
 }
 ```
 
+## Log File
+
+`OpenLogFile` returns a rotating `io.Writer` for the process log stream. Tee it
+into whatever handler already feeds the TUI panel and the same lines land on
+disk; set `TUI.LogPath` and the panel divider shows where they went.
+
+```go
+cfg := agentfleet.DefaultConfig()
+cfg.LogFile.Path = "retask.log" // default: <cwd>/agentfleet.log
+
+logFile, err := agentfleet.OpenLogFile(cfg.LogFile)
+if err != nil {
+    return err
+}
+defer logFile.Close()
+
+logBuf := agentfleet.NewLogBuffer(500)
+cfg.TUI.Log = logBuf
+cfg.TUI.LogPath = logFile.Path()
+
+logger := slog.New(slog.NewTextHandler(io.MultiWriter(logBuf, logFile), nil))
+```
+
+```
+── Logs (/work/session-abc/retask.log) ───────────────────────────
+```
+
+Rotation follows the Unix convention: the live file keeps its name and older
+generations shift down through `retask.log.1`, `retask.log.2`, … up to
+`LogFile.Backups` before being discarded.
+
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| `LogFile.Enabled` | `true` | Write the log stream to a file. `false` makes `OpenLogFile` return a nil no-op writer. |
+| `LogFile.Path` | `<cwd>/agentfleet.log` | Live log file. Relative paths resolve against the working directory. |
+| `LogFile.MaxBytes` | `10MB` | Rotate once the live file exceeds this. `0` disables rotation. |
+| `LogFile.Backups` | `5` | Rotated generations kept. `0` truncates instead of keeping any. |
+| `TUI.ShowLogPath` | `true` | Render `TUI.LogPath` in the log panel divider. |
+
 ## Examples
 
 | Example | Purpose |
