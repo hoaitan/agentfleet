@@ -1,6 +1,6 @@
 module github.com/hoaitan/agentfleet
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/charmbracelet/bubbletea v1.3.10
