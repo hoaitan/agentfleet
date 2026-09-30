@@ -45,7 +45,10 @@ func (a *PtyAgent) Start(rows, cols int) error {
 	a.cmd.Stdout = pts
 	a.cmd.Stderr = pts
 
-	if len(a.cfg.Env) > 0 {
+	if a.cfg.ReplaceEnv {
+		// Never nil: a nil cmd.Env means "inherit the parent's env".
+		a.cmd.Env = append([]string{}, a.cfg.Env...)
+	} else if len(a.cfg.Env) > 0 {
 		a.cmd.Env = append(os.Environ(), a.cfg.Env...)
 	}
 
