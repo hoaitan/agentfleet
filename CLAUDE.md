@@ -141,6 +141,8 @@ cfg := agentfleet.DefaultConfig()
 // cfg.TUI.ShowLogPath      = true   (render cfg.TUI.LogPath in the log divider)
 // cfg.Agent.PTYRows        = 24
 // cfg.Agent.PTYCols        = 220
+// cfg.Agent.Env            = nil    (KEY=VALUE additions to os.Environ())
+// cfg.Agent.ReplaceEnv     = false  (true = Env is the child's entire environment)
 // cfg.LogFile.Enabled      = true
 // cfg.LogFile.Path         = ""     (empty = <cwd>/agentfleet.log)
 // cfg.LogFile.MaxBytes     = 10MB   (0 = never rotate)

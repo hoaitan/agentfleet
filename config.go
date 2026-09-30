@@ -41,7 +41,11 @@ type TUIConfig struct {
 type AgentConfig struct {
 	PTYRows int      // default: 24
 	PTYCols int      // default: 220
-	Env     []string // extra env vars (KEY=VALUE); appended to os.Environ() for child process only
+	Env     []string // extra env vars (KEY=VALUE); appended to os.Environ() for child process only, or the entire env when ReplaceEnv is set
+	// ReplaceEnv makes Env the child's entire environment instead of
+	// additions to os.Environ(). Use it when the caller has already built
+	// (and filtered) the full environment.
+	ReplaceEnv bool
 }
 
 // DefaultConfig returns sensible production defaults.
